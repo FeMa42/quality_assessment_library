@@ -7,10 +7,31 @@ It provides two main functionalities:
 
 ## Installation
 
-To install the dependencies, run the following command:
+### Option 1: Quick installation with models
+
+The easiest way to install the package with all required models is to use the provided installation script:
 
 ```bash
-pip install -r requirements_min.txt
+# Clone the repository
+git clone https://github.com/FeMa42/quality_assessment_library.git
+cd quality_assessment_library
+
+# Run the installation script
+python install.py --develop
+```
+
+This will install the package and download all required model files into the cloned repository. 
+
+### Option 2: Manual installation
+
+You can also install the package and download models separately:
+
+```bash
+# Install the package
+pip install -e . --use-pep517
+
+# Download the models
+python -m scripts.download_models --output-dir ./car_quality_estimator/models
 ```
 
 ## Usage of general metrics
@@ -19,7 +40,32 @@ Example usage of the metrics library can be found in `metrics.ipynb`.
 
 ## Usage of car quality metrics
 
-Download the model from [Huggingface](https://huggingface.co/DamianBoborzi/car_quality_estimator) and put them in the `models` folder. If you want to use the combined model also load the PCA model from the same repository. We provide an example on how to load the models in the `car_quality_metrics.ipynb` notebook. Example usage of the car quality metrics can also be found in `car_quality_metrics.ipynb`.
+Example usage of the car quality metrics can be found in `car_quality_metrics.ipynb`.
+
+> Note: You have to download the model from [Huggingface](https://huggingface.co/DamianBoborzi/car_quality_estimator) and put them in the `./car_quality_estimator/models` folder (see [README_models.md](README_models.md) for more details).
+
+### Basic usage:
+
+```python
+from car_quality_estimator.car_quality_metric import load_car_quality_score
+import PIL.Image
+import glob
+import os 
+
+# Load the car quality metric
+car_quality_metric = load_car_quality_score(
+    use_combined_embedding_model=True
+)
+
+# Load some images to analyze
+test_image_dir = "example_data/2c21b97ff3dc4fc3b1ef9e4bb0164318"
+all_images = glob.glob(os.path.join(test_image_dir, "*.png"))
+all_images = [PIL.Image.open(image).convert("RGB") for image in all_images]
+
+# Compute quality scores
+scores = car_quality_metric.compute_scores_no_reference(all_images)
+print(scores)
+```
 
 ## Further resources
 

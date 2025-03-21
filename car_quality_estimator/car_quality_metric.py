@@ -267,12 +267,56 @@ class CarQualityScore:
 
         return results
 
-def load_car_quality_score(model_dir="../models", device=None, use_combined_embedding_model=False, batch_size=32):
+# def load_car_quality_score(model_dir="../models", device=None, use_combined_embedding_model=False, batch_size=32):
+#     """
+#     Factory function to load a CarQualityScore instance with the appropriate configuration.
+    
+#     Args:
+#         model_dir (str): Directory containing model files
+#         device (str, optional): Device to run on. Defaults to None (auto-detect).
+#         use_combined_embedding_model (bool, optional): Whether to use the combined embedding model. Defaults to False.
+#         batch_size (int, optional): Batch size for embedding generation. Defaults to 32.
+    
+#     Returns:
+#         CarQualityScore: Configured instance
+#     """
+#     if device is None:
+#         device = "cuda" if torch.cuda.is_available() else "cpu"
+#         # check for mps
+#         if torch.backends.mps.is_available():
+#             device = "mps"
+    
+#     if use_combined_embedding_model:
+#         config_path = os.path.join(model_dir, "car_quality_model_combined_transformer_individual.json")
+#         weights_path = os.path.join(model_dir, "car_quality_model_combined_transformer_individual.pt")
+#         # PCA model path is the same for both types
+#         pca_model_path = os.path.join(model_dir, "pca_model_DINOv2.pkl")
+#         if not os.path.exists(pca_model_path):
+#             raise FileNotFoundError(f"Could not find PCA model at {pca_model_path}")
+#     else:
+#         config_path = os.path.join(model_dir, "car_quality_model_siglip_transformer_individual.json")
+#         weights_path = os.path.join(model_dir, "car_quality_model_siglip_transformer_individual.pt")
+#         pca_model_path = None
+#     model_type = "transformer"  # Default to transformer architecture
+    
+#     # Create and return the CarQualityScore instance
+#     return CarQualityScore(
+#         config_path=config_path,
+#         weights_path=weights_path,
+#         pca_model_path=pca_model_path,
+#         model_type=model_type,
+#         use_combined_embedding_model=use_combined_embedding_model,
+#         device=device,
+#         batch_size=batch_size
+#     )
+
+
+def load_car_quality_score(model_dir=None, device=None, use_combined_embedding_model=False, batch_size=32):
     """
     Factory function to load a CarQualityScore instance with the appropriate configuration.
     
     Args:
-        model_dir (str): Directory containing model files
+        model_dir (str): Directory containing model files. If models aren't found, will look in package directory.
         device (str, optional): Device to run on. Defaults to None (auto-detect).
         use_combined_embedding_model (bool, optional): Whether to use the combined embedding model. Defaults to False.
         batch_size (int, optional): Batch size for embedding generation. Defaults to 32.
@@ -283,22 +327,72 @@ def load_car_quality_score(model_dir="../models", device=None, use_combined_embe
     if device is None:
         device = "cuda" if torch.cuda.is_available() else "cpu"
         # check for mps
-        if torch.backends.mps.is_available():
+        if hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             device = "mps"
-    
-    if use_combined_embedding_model:
-        config_path = os.path.join(model_dir, "car_quality_model_combined_transformer_individual.json")
-        weights_path = os.path.join(model_dir, "car_quality_model_combined_transformer_individual.pt")
-        # PCA model path is the same for both types
-        pca_model_path = os.path.join(model_dir, "pca_model_DINOv2.pkl")
-        if not os.path.exists(pca_model_path):
-            raise FileNotFoundError(f"Could not find PCA model at {pca_model_path}")
+
+
+
+    # If models don't exist in the provided directory, try to find them in the package
+    if model_dir is None:
+        try:
+            # Get the package installation path
+            # package_path = pkg_res.resource_filename('car_quality_estimator.car_quality_metric', '')
+            file_path = os.path.dirname(os.path.abspath(__file__))
+            # But models are in the car_quality_estimator submodule
+            default_model_dir = os.path.join(file_path, 'models')
+
+            if use_combined_embedding_model:
+                config_path = os.path.join(
+                    default_model_dir, "car_quality_model_combined_transformer_individual.json")
+                weights_path = os.path.join(
+                    default_model_dir, "car_quality_model_combined_transformer_individual.pt")
+                pca_model_path = os.path.join(
+                    default_model_dir, "pca_model_DINOv2.pkl")
+
+                if not (os.path.exists(config_path) and os.path.exists(weights_path) and os.path.exists(pca_model_path)):
+                    raise FileNotFoundError(
+                        f"Could not find model files in {model_dir} or {default_model_dir}")
+            else:
+                config_path = os.path.join(
+                    default_model_dir, "car_quality_model_siglip_transformer_individual.json")
+                weights_path = os.path.join(
+                    default_model_dir, "car_quality_model_siglip_transformer_individual.pt")
+
+                if not (os.path.exists(config_path) and os.path.exists(weights_path)):
+                    raise FileNotFoundError(
+                        f"Could not find model files in {model_dir} or {default_model_dir}")
+
+            print(
+                f"Using models from package installation directory: {default_model_dir}")
+        except Exception as e:
+            print(f"Error finding models in package directory: {str(e)}")
+            if use_combined_embedding_model:
+                raise FileNotFoundError(
+                    f"Could not find model files at {config_path}, {weights_path}, or {pca_model_path}")
+            else:
+                raise FileNotFoundError(
+                    f"Could not find model files at {config_path} or {weights_path}")
     else:
-        config_path = os.path.join(model_dir, "car_quality_model_siglip_transformer_individual.json")
-        weights_path = os.path.join(model_dir, "car_quality_model_siglip_transformer_individual.pt")
-        pca_model_path = None
-    model_type = "transformer"  # Default to transformer architecture
+        if use_combined_embedding_model:
+            config_path = os.path.join(
+                model_dir, "car_quality_model_combined_transformer_individual.json")
+            weights_path = os.path.join(
+                model_dir, "car_quality_model_combined_transformer_individual.pt")
+            pca_model_path = os.path.join(model_dir, "pca_model_DINOv2.pkl")
+            if not (os.path.exists(config_path) and os.path.exists(weights_path) and os.path.exists(pca_model_path)):
+                raise FileNotFoundError(
+                    f"Could not find model files at {model_dir}")
+        else:
+            config_path = os.path.join(
+                model_dir, "car_quality_model_siglip_transformer_individual.json")
+            weights_path = os.path.join(
+                model_dir, "car_quality_model_siglip_transformer_individual.pt")
+            if not (os.path.exists(config_path) and os.path.exists(weights_path)):
+                raise FileNotFoundError(
+                    f"Could not find model files at {model_dir}")
     
+    model_type = "transformer"  # Default to transformer architecture
+
     # Create and return the CarQualityScore instance
     return CarQualityScore(
         config_path=config_path,

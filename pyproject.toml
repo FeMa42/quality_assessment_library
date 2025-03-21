@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=64.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "quality_assessment_library"
+version = "0.1.0"
+description = "A library for assessing the quality of 3D models, with a focus on 3D car models"
+readme = "README.md"
+authors = [
+    {name = "Damian Boborzi", email = "damian.boborzi@uni-a.de"}
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved ::Apache Software License",
+    "Operating System :: OS Independent",
+]
+requires-python = ">=3.8"
+dependencies = [
+    "torch>=2.0.0",
+    "torchvision>=0.15.0",
+    "numpy>=1.20.0",
+    "tqdm>=4.60.0",
+    "Pillow>=8.0.0",
+    "transformers>=4.20.0",
+    "huggingface_hub>=0.10.0",
+    "scikit-learn>=1.0.0",
+    "scipy>=1.7.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/FeMa42/quality_assessment_library"
+"Bug Tracker" = "https://github.com/FeMa42/quality_assessment_library/issues"
+
+[project.scripts]
+quality-assessment-download-models = "scripts.download_models:download_models"
+
+[tool.setuptools]
+packages = ["car_quality_estimator", "scripts", "metrics"]
+include-package-data = true

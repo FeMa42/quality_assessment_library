@@ -76,7 +76,7 @@ class Metrics:
         self,
         device: Optional[str] = "cuda",
         clip_model_path: str = "openai/clip-vit-large-patch14",
-        clip_cache_dir: str = "./models/clip-vit-large-patch14",
+        clip_cache_dir: str = None,
     ):
         from torchmetrics.functional.image import (
             peak_signal_noise_ratio,  # PSNR, higher
@@ -100,6 +100,12 @@ class Metrics:
         from torchmetrics.image.kid import KernelInceptionDistance
         # from torchmetrics.functional.regression import mean_squared_error
         from transformers import CLIPImageProcessor, CLIPModel, CLIPTokenizer
+
+        if clip_cache_dir is None:
+            # "./metrics/models/clip-vit-large-patch14"
+            clip_cache_dir = os.path.join(os.path.dirname(__file__), "models", "clip-vit-large-patch14")
+        else:
+            clip_cache_dir = os.path.join(clip_cache_dir, "clip-vit-large-patch14")
 
         clip_model = CLIPModel.from_pretrained(
             clip_model_path, cache_dir=clip_cache_dir
