@@ -213,7 +213,6 @@ class CarQualityScore:
         generated_embeddings = self.generate_embeddings(generated_data)
         
         # Compute quality scores using the pre-computed embeddings
-        print("Computing quality scores for generated models...")
         generated_scores = self.compute_quality_score_from_embeddings(generated_embeddings)
         gen_metrics = self.aggregate_metrics(generated_scores)
 
@@ -237,19 +236,14 @@ class CarQualityScore:
         """
 
         # Evaluate both sets and get embeddings along with metrics
-        print("Generating embeddings for generated models...")
         generated_embeddings = self.generate_embeddings(generated_data)
-        print("Generating embeddings for reference models...")
         reference_embeddings = self.generate_embeddings(reference_data)
 
         # Compute quality scores using the pre-computed embeddings
-        print("Computing quality scores for generated models...")
         generated_scores = self.compute_quality_score_from_embeddings(generated_embeddings)
         gen_metrics = self.aggregate_metrics(generated_scores)
 
-        print("Computing quality scores for reference models...")
-        reference_scores = self.compute_quality_score_from_embeddings(
-            reference_embeddings)
+        reference_scores = self.compute_quality_score_from_embeddings(reference_embeddings)
         ref_metrics = self.aggregate_metrics(reference_scores)
 
         # Calculate quality gap

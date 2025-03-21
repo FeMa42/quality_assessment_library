@@ -12,13 +12,11 @@ pip install -r requirements_min.txt
 
 ## Usage of general metrics
 
-Example usage of the metrics library can be found in `test_metrics.ipynb`.
+Example usage of the metrics library can be found in `metrics.ipynb`.
 
 ## Usage of car quality metrics
 
-Download the model from [Huggingface](https://huggingface.co/DamianBoborzi/car_quality_estimator) and put them in the `models` folder. If you want to use the combined model also load the PCA model from the same repository.
-
-Example usage of the car quality metrics can be found in `test_metrics.ipynb`.
+Download the model from [Huggingface](https://huggingface.co/DamianBoborzi/car_quality_estimator) and put them in the `models` folder. If you want to use the combined model also load the PCA model from the same repository. We provide an example on how to load the models in the `car_quality_metrics.ipynb` notebook. Example usage of the car quality metrics can also be found in `car_quality_metrics.ipynb`.
 
 ## Further resources
 
