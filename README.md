@@ -17,7 +17,7 @@ git clone https://github.com/FeMa42/quality_assessment_library.git
 cd quality_assessment_library
 
 # Run the installation script
-python install.py --develop
+python scripts/install.py --develop
 ```
 
 This will install the package and download all required model files into the cloned repository. 
