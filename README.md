@@ -42,8 +42,6 @@ Example usage of the metrics library can be found in `metrics.ipynb`.
 
 Example usage of the car quality metrics can be found in `car_quality_metrics.ipynb`.
 
-> Note: You have to download the model from [Huggingface](https://huggingface.co/DamianBoborzi/car_quality_estimator) and put them in the `./car_quality_estimator/models` folder (see [README_models.md](README_models.md) for more details).
-
 ### Basic usage:
 
 ```python

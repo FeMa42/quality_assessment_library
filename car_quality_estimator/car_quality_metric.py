@@ -340,6 +340,9 @@ def load_car_quality_score(model_dir=None, device=None, use_combined_embedding_m
             file_path = os.path.dirname(os.path.abspath(__file__))
             # But models are in the car_quality_estimator submodule
             default_model_dir = os.path.join(file_path, 'models')
+            if not os.path.exists(default_model_dir):
+                from scripts.download_models import download_models
+                download_models(default_model_dir)
 
             if use_combined_embedding_model:
                 config_path = os.path.join(
