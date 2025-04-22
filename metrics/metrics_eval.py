@@ -6,43 +6,9 @@ import tempfile
 import torch
 import glob
 from PIL import Image
-from metrics.metrics import process_folder_new, Metrics, GeometryMetrics, preprocess_image, preprocess_image_rgba
+from metrics.metrics import Metrics, GeometryMetrics, CarQualityMetrics
+from metrics.helpers import process_folder_new,  preprocess_image, preprocess_image_rgba
 from torchvision.transforms.functional import to_tensor
-
-def process_object_metrics_old(root_folder,  device="cuda"):
-    original_folder = os.path.join(root_folder, "original")
-    if not os.path.isdir(original_folder):
-        raise ValueError(f"Original folder not found in {root_folder}")
-    
-    subfolders = [d for d in os.listdir(root_folder)
-                  if os.path.isdir(os.path.join(root_folder, d)) 
-                  and d.lower() not in ["original", "scaled"]]
-    
-    results = {}
-    for sub in subfolders:
-        generated_folder = os.path.join(root_folder, sub)
-        print(f"Processing subfolder: {sub}")
-        
-        sem_metrics = process_folder_new(
-            original_folder=original_folder,
-            generated_folder=generated_folder,
-            preprocess_func=preprocess_image,  
-            metric_class=Metrics,
-            device=device,  
-            compute_distribution_metrics=False
-        ) 
-        geom_metrics = process_folder_new(
-            original_folder=original_folder,
-            generated_folder=generated_folder,
-            preprocess_func=preprocess_image_rgba,  
-            metric_class=GeometryMetrics,
-            num_points=100
-        )
-        results[sub] = {
-            "semantic_metrics": sem_metrics,
-            "geometric_metrics": geom_metrics
-        }
-    return results
 
 def convert_to_float(x):
     if torch.is_tensor(x):
@@ -51,7 +17,8 @@ def convert_to_float(x):
         return float(x)
     except Exception:
         return x
-    
+
+  
 def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="cuda"):
     """
     Processes metrics for a single generation run over a hierarchical folder structure.
@@ -103,7 +70,10 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
     per_viewpoint = {}
     sem_metrics_list = []
     geom_metrics_list = []
-    
+    car_metrics_list = []
+
+    car_quality = CarQualityMetrics(use_combined_embedding_model=True, device=device, batch_size=32)
+
     for vp in sorted(viewpoint_set):
         print(f"Processing viewpoint: {vp}")
         with tempfile.TemporaryDirectory() as orig_temp, tempfile.TemporaryDirectory() as gen_temp:
@@ -135,7 +105,7 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
                 preprocess_func=preprocess_image,
                 metric_class=Metrics,
                 device=device,
-                compute_distribution_metrics=True
+                compute_distribution_metrics=False
             )
             print(sem)
             geom = process_folder_new(
@@ -147,13 +117,37 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
             )
             print(geom)
             
+            orig_cqm = car_quality.compute_folder_metrics(orig_temp)
+            gen_cqm  = car_quality.compute_folder_metrics(gen_temp)
+            rel_diffs = {}
+            for k in ("avg_quality_score", "avg_entropy", "avg_combined_score", "quality_std"):
+                o = orig_cqm.get(k, None)
+                g = gen_cqm.get(k, None)
+                if o is None or o == 0 or g is None:
+                    rel_diffs[k] = None
+                else:
+                    rel_diffs[k] = (g - o) / o
+
             vp_key = os.path.splitext(vp)[0]  
             per_viewpoint[vp_key] = {
                 "semantic_metrics": sem,
-                "geometric_metrics": geom
+                "geometric_metrics": geom,
+                "car_quality_metrics": {
+                    "orig_score": orig_cqm,
+                    "gen_score":  gen_cqm,
+                    "rel_diff":   rel_diffs
+                }
             }
             sem_metrics_list.append(sem)
             geom_metrics_list.append(geom)
+            flat = {}
+            for k, v in orig_cqm.items():
+                flat[f"orig_{k}"] = v
+            for k, v in gen_cqm.items():
+                flat[f"gen_{k}"] = v
+            for k, v in rel_diffs.items():
+                flat[f"rel_diff_{k}"] = v
+            car_metrics_list.append(flat)
     
     def average_metric_dicts(dict_list):
         averaged = {}
@@ -165,18 +159,15 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
 
     overall_semantic = average_metric_dicts(sem_metrics_list) if sem_metrics_list else None
     overall_geometric = average_metric_dicts(geom_metrics_list) if geom_metrics_list else None
+    overall_car = average_metric_dicts(car_metrics_list) if car_metrics_list else None
 
-    """
-    overall_metrics = {}
-    if overall_semantic:
-        overall_metrics.update(overall_semantic)
-    if overall_geometric:
-        overall_metrics.update(overall_geometric)
-    """
+
     results = {
         "per_viewpoint": per_viewpoint,
         "overall_semantic_metrics": overall_semantic,
         "overall_geometric_metrics": overall_geometric,
+        "overall_car_quality_metrics": overall_car,
+
     }
     return results
 
@@ -201,6 +192,5 @@ def json_file_to_combined_table(json_filepath):
     overall_sem = data.get("overall_semantic_metrics", {})
     overall_geom = data.get("overall_geometric_metrics", {})
     combined = {**overall_sem, **overall_geom}
-    # Build a single-column DataFrame for the overall metrics.
     df = pd.DataFrame(combined, index=[0])
     return df
