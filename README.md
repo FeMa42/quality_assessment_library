@@ -1,5 +1,4 @@
-# Quality Assessment Library - TRELLIS ASSESSMENT BRANCH
-
+# Quality Assessment Library
 This library provides a set of functions for assessing the quality of images and 3D objects. It is focused on estimating the quality of 3D objects using images. 
 It provides two main functionalities:
 - General metrics: metrics that can be applied to any 3D object. These metrics include: MSE, CLIP-S, Spectral_MSE, D_lambda, ERGAS, PSNR, RASE, RMSE_wind, SAM, MS-SSIM, SSIM, UQI, VIF, LPIPS, SCC, FID, IS, KID. And are mainly based on torchmetrics.
