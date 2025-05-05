@@ -12,6 +12,7 @@ from torchvision.transforms import ToTensor
 from rembg import remove
 import cv2
 import contextlib
+import pandas as pd 
 
 #############################
 #### Image Preprocessing ####
@@ -191,7 +192,6 @@ def process_folder_new(original_folder, generated_folder, preprocess_func, metri
             gen_img = preprocess_func(gen_img)
             geo_metric.compute_image_pair(orig_img, gen_img)
         return geo_metric.get_average_metrics()
-    
     else:
         raise ValueError("Unsupported metric_class. Must be either Metrics or GeometryMetrics.")
 
@@ -441,3 +441,92 @@ def compare_summed_outline_normals(image1, image2, num_points=100):
         "sum_vector1_squared": sum_vector1_sq,
         "sum_vector2_squared": sum_vector2_sq,
     }
+
+##############################################
+#### Definition of Custom Metrics Classes ####
+##############################################
+
+def get_caption_from_metadata(metadata_df, sha256: str, caption_col: str = "caption"):
+    """
+    Get the caption from the metadata DataFrame for a given sha256.
+    """
+
+    metadata_row = metadata_df[metadata_df["sha256"] == sha256]
+    if metadata_row.empty:
+        print(f"No metadata found for {sha256}. Skipping.")
+        return None
+    metadata_row = metadata_row.iloc[0]
+    metadata_caption = metadata_row[caption_col]
+    if isinstance(metadata_caption, str):
+        pass
+    elif isinstance(metadata_caption, list):
+        metadata_caption = " ".join(metadata_caption)
+    else:
+        raise ValueError(f"Unexpected type for caption: {type(metadata_caption)}. Expected str or list.")
+    return metadata_caption
+
+def load_images_from_dir_to_pil(image_dir: str, preprocess_func):
+    """
+    Load all images from a directory, preprocess them with preprocess_func,
+    and return a tensor of shape (num_frames, channels, height, width).
+    """
+    files = sorted(glob.glob(os.path.join(image_dir, "*.png")))
+    images = [preprocess_func(Image.open(f)) for f in files]
+    return images
+
+def load_prompts_from_dir(prompt_dir: str):
+    prompt_files = sorted(glob.glob(os.path.join(prompt_dir, "*.txt")))
+    object_prompts = []
+    for prompt_file in prompt_files:
+        with open(prompt_file, "r") as f:
+            # each file is one prompt 
+            object_prompts.append(f.read().strip())
+    return object_prompts
+
+def process_folder_with_prompt_files(
+    generated_folder: str,
+    preprocess_func,
+    prompt_metric):
+    """
+    Process a folder of generated images and compute the prompt metric using the metadata from the metadata file. 
+    This function loads images from the specified folder, preprocesses them using the provided function,
+    and evaluates them against the given object prompt using the provided prompt metric.
+    Args:
+        generated_folder (str): Path to the folder containing generated images.
+        object_prompts (Union[str, List[str]]): Object prompts to evaluate against.
+        preprocess_func: Preprocessing function for images.
+        prompt_metric: function which estimates the prompt metrics. E.g. Instance of ImageBasedPromptEvaluator.
+    """
+    generated_images = load_images_from_dir_to_pil(generated_folder, preprocess_func)  
+    object_prompts = load_prompts_from_dir(generated_folder)
+    # Check if the number of prompts matches the number of images
+    if len(object_prompts) != len(generated_images):
+        raise ValueError(f"Number of prompts ({len(object_prompts)}) does not match number of images ({len(generated_images)}).")
+    
+    image_scores = prompt_metric.evaluate(generated_images, object_prompts)
+    return image_scores
+
+def process_folder_with_prompt(
+    generated_folder: str,
+    object_prompts: Union[str, List[str]],
+    preprocess_func,
+    prompt_metric):
+    """
+    Process a folder of generated images and compute the prompt metric using the metadata from the metadata file. 
+    This function loads images from the specified folder, preprocesses them using the provided function,
+    and evaluates them against the given object prompt using the provided prompt metric.
+    Args:
+        generated_folder (str): Path to the folder containing generated images.
+        object_prompts (Union[str, List[str]]): Object prompts to evaluate against.
+        preprocess_func: Preprocessing function for images.
+        prompt_metric: function which estimates the prompt metrics. E.g. Instance of ImageBasedPromptEvaluator.
+    """
+    generated_images = load_images_from_dir_to_pil(generated_folder, preprocess_func)  
+    if isinstance(object_prompts, str):
+        object_prompts = [object_prompts] * len(generated_images)
+    elif len(object_prompts) != len(generated_images):
+        raise ValueError(f"Number of prompts ({len(object_prompts)}) does not match number of images ({len(generated_images)}).")
+    
+    image_scores = prompt_metric.evaluate(generated_images, object_prompts)
+    return image_scores
+

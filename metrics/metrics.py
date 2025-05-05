@@ -14,6 +14,7 @@ import cv2
 import contextlib
 from metrics.helpers import preprocess_image, load_images_from_dir_new, compute_bounding_box, compare_bounding_boxes, compare_px_area, compute_outline_normals, compare_outline_normals, compare_summed_outline_normals
 from car_quality_estimator.car_quality_metric import load_car_quality_score
+from functools import partial
 
 #######################################
 #### Definition of Metrics classes ####
@@ -366,3 +367,107 @@ class CarQualityMetrics:
                 # in case v is a numpy scalar or array
                 cleaned[k] = float(np.array(v))
         return cleaned
+
+
+
+class ImageBasedPromptEvaluator:
+    """
+    A class to evaluate image-based prompts using CLIP and ImageReward.
+    Uses ImageReward from: https://github.com/THUDM/ImageReward
+    Args:
+        model_name_or_path (str): Path to the CLIP model or model name from Hugging Face Hub.
+    """
+    def __init__(self, model_name_or_path="openai/clip-vit-base-patch16"):
+        """
+        Initialize the evaluator with a CLIP model and ImageReward model.
+        Args:
+            model_name_or_path (str): Path to the CLIP model or model name from Hugging Face Hub.
+        """
+        from torchmetrics.functional.multimodal import clip_score
+        import ImageReward as RM
+        self.model_name_or_path = model_name_or_path
+        self.clip_score_fn = partial(clip_score, model_name_or_path=self.model_name_or_path)
+        self.reward_model = RM.load("ImageReward-v1.0")
+
+    def calculate_clip_score_PIL(self, images, prompts):
+        """
+        Calculate the CLIP score for a batch of images and a batch of prompts.
+        Args:
+            images (list): List of PIL.Image images to evaluate.  
+            prompts (list): List of prompts corresponding to the images. Has to be the same length as images.
+        Returns:
+            float: The average CLIP score for the batch.
+        """
+        np_images = np.array(images, dtype=np.uint8)
+        image_tensor = torch.from_numpy(np_images).permute(0, 3, 1, 2)
+        return self.calculate_clip_score(image_tensor, prompts)
+    
+    def calculate_clip_score(self, image_tensor, prompts):
+        """
+        Calculate the CLIP score for a batch of images and a batch of prompts.
+        Args:
+            image_tensor (torch.Tensor): Tensor of images to evaluate.
+            prompts (list): List of prompts corresponding to the images.
+        Returns:
+            float: The average CLIP score for the batch.
+        """
+        with torch.no_grad():
+            prompt_clip_score = self.clip_score_fn(image_tensor, prompts).detach()
+        return round(float(prompt_clip_score), 4)
+
+    def calculate_reward(self, images, prompt):
+        """
+        Calculate the reward for a batch of images and single prompt using the ImageReward model.
+        Args:
+            images (list, PIL.Image): List of PIL.Image images to evaluate or a single image.
+            prompts (str): Single prompt corresponding to the images. 
+        Returns:
+            torch.Tensor: The average reward for the batch.
+        """
+        with torch.no_grad():
+            rewards = self.reward_model.score(prompt, images)
+            # Convert to numpy array
+            rewards = np.array(rewards)
+            # mean over the batch
+            rewards = np.mean(rewards)
+        return round(float(rewards), 4)
+
+    def evaluate(self, images, prompts):
+        """
+        Evaluate a batch of images using CLIP and ImageReward. 
+        It expects a batch of images and a batch of prompts with the same length.
+        Args:
+            images (list): List of PIL.Image images to evaluate. 
+            prompts (list): List of prompts corresponding to the images. Has to be the same length as images.
+        Returns:
+            dict: Dictionary containing the CLIP score and ImageReward score.
+        """
+        clip_score = self.calculate_clip_score_PIL(images, prompts)
+        rewards = []
+        for prompt in prompts:
+            reward = self.calculate_reward(images, prompt)
+            rewards.append(reward)
+        reward = np.mean(rewards)
+        reward = round(float(reward), 4)
+        return {
+            "clip_score": clip_score,
+            "image_reward": reward
+        }
+
+    def evaluate_one_prompt_n_images(self, images, prompt):
+        """
+        Evaluate a batch of images using CLIP and ImageReward. 
+        It expects a batch of images and a single prompt since it is used for renders of a 3D model.
+        Args:
+            images (list): List of PIL.Image images to evaluate. 
+            prompts (str): Single prompt corresponding to the images.
+        Returns:
+            dict: Dictionary containing the CLIP score and ImageReward score.
+        """
+        prompts = [prompt] * len(images)
+        clip_score = self.calculate_clip_score_PIL(images, prompts)
+        reward = self.calculate_reward(images, prompt)
+        return {
+            "clip_score": clip_score,
+            "image_reward": reward
+        }

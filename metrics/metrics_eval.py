@@ -6,8 +6,8 @@ import tempfile
 import torch
 import glob
 from PIL import Image
-from metrics.metrics import Metrics, GeometryMetrics, CarQualityMetrics
-from metrics.helpers import process_folder_new,  preprocess_image, preprocess_image_rgba
+from metrics.metrics import Metrics, GeometryMetrics, CarQualityMetrics, ImageBasedPromptEvaluator
+from metrics.helpers import process_folder_new,  preprocess_image, preprocess_image_rgba, get_caption_from_metadata, process_folder_with_prompt_files
 from torchvision.transforms.functional import to_tensor
 
 def convert_to_float(x):
@@ -19,7 +19,7 @@ def convert_to_float(x):
         return x
 
   
-def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="cuda"):
+def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, metadata_csv=None, device="cuda"):
     """
     Processes metrics for a single generation run over a hierarchical folder structure.
     
@@ -71,8 +71,16 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
     sem_metrics_list = []
     geom_metrics_list = []
     car_metrics_list = []
+    prompt_metrics_list = []
 
     car_quality = CarQualityMetrics(use_combined_embedding_model=True, device=device, batch_size=32)
+
+    if metadata_csv is not None:
+        prompt_evaluator = ImageBasedPromptEvaluator()
+        metadata_csv = pd.read_csv(metadata_csv)
+    else:
+        prompt_evaluator = None
+        metadata_csv = None
 
     for vp in sorted(viewpoint_set):
         print(f"Processing viewpoint: {vp}")
@@ -88,10 +96,21 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
                 if not (src_gen and os.path.exists(src_gen)):
                     print(f"Warning: In object '{obj}', generated image {vp} not found.")
                     continue
+                if metadata_csv is not None:
+                    object_prompt = get_caption_from_metadata(metadata_csv, obj.strip())
+                    if object_prompt is not None:
+                        view_point_name = os.path.splitext(vp)[0]
+                        prompt_filename = os.path.join(gen_temp, f"{obj}_{view_point_name}.txt")
+                        with open(prompt_filename, 'w') as f:
+                            f.write(object_prompt)
+                    else:
+                        print(f"Warning: No prompt found for object {obj} in metadata.")
+                        continue
                 dst_gt = os.path.join(orig_temp, f"{obj}_{vp}")
                 dst_gen = os.path.join(gen_temp, f"{obj}_{vp}")
                 shutil.copy2(src_gt, dst_gt)
                 shutil.copy2(src_gen, dst_gen)
+
             
             temp_gt_files = glob.glob(os.path.join(orig_temp, "*.png"))
             temp_gen_files = glob.glob(os.path.join(gen_temp, "*.png"))
@@ -128,6 +147,16 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
                 else:
                     rel_diffs[k] = (g - o) / o
 
+            if prompt_evaluator is not None:
+                prom = process_folder_with_prompt_files(
+                                    generated_folder=gen_temp,
+                                    preprocess_func=preprocess_image,
+                                    prompt_metric=prompt_evaluator
+                                    )
+                print(prom)
+            else:
+                prom = None
+            
             vp_key = os.path.splitext(vp)[0]  
             per_viewpoint[vp_key] = {
                 "semantic_metrics": sem,
@@ -138,6 +167,10 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
                     "rel_diff":   rel_diffs
                 }
             }
+            if prompt_evaluator is not None:
+                per_viewpoint[vp_key]["prompt_metrics"] = prom
+                prompt_metrics_list.append(prom)
+
             sem_metrics_list.append(sem)
             geom_metrics_list.append(geom)
             flat = {}
@@ -160,6 +193,7 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
     overall_semantic = average_metric_dicts(sem_metrics_list) if sem_metrics_list else None
     overall_geometric = average_metric_dicts(geom_metrics_list) if geom_metrics_list else None
     overall_car = average_metric_dicts(car_metrics_list) if car_metrics_list else None
+    overall_prompt = average_metric_dicts(prompt_metrics_list) if prompt_metrics_list else None
 
 
     results = {
@@ -167,6 +201,7 @@ def process_metrics_by_viewpoint(ground_truth_folder, generated_folder, device="
         "overall_semantic_metrics": overall_semantic,
         "overall_geometric_metrics": overall_geometric,
         "overall_car_quality_metrics": overall_car,
+        "overall_prompt_metrics": overall_prompt
 
     }
     return results
@@ -191,6 +226,7 @@ def json_file_to_combined_table(json_filepath):
     combined_data = {}
     overall_sem = data.get("overall_semantic_metrics", {})
     overall_geom = data.get("overall_geometric_metrics", {})
-    combined = {**overall_sem, **overall_geom}
+    overall_prompt = data.get("overall_prompt_metrics", {})
+    combined = {**overall_sem, **overall_geom, **overall_prompt}
     df = pd.DataFrame(combined, index=[0])
     return df
