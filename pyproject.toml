@@ -54,5 +54,5 @@ dependencies = [
 quality-assessment-download-models = "scripts.download_models:download_models"
 
 [tool.setuptools]
-packages = ["car_quality_estimator", "scripts", "metrics"]
+packages = ["car_quality_estimator", "scripts", "metrics", "preprocessing"]
 include-package-data = true

@@ -279,7 +279,7 @@ def align_views(parent_folder, detection_mode="vlm",
 # Background Removal Functions
 # =============================================================================
 
-def remove_background_from_folder(folder):
+def remove_background_from_folder(folder, verbose=True):
 
     valid_exts = ('.png',)
     image_files = [f for f in os.listdir(folder) if f.lower().endswith(valid_exts)]
@@ -288,7 +288,8 @@ def remove_background_from_folder(folder):
         im = Image.open(path)
         output_im = remove(im)
         output_im.save(path)
-    print(f"Background removal complete in folder: {folder}")
+    if verbose:
+        print(f"Background removal complete in folder: {folder}")
 
 def remove_background_recursive(parent_folder):
 
