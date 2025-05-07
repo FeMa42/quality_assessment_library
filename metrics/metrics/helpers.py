@@ -138,8 +138,7 @@ def load_images_from_dir(image_dir: str, device):
     torch_image_tensor = torch.tensor(np.array(all_images), dtype=torch.float32)
     # (num_frames, channels, height, width)
     torch_image_tensor = torch_image_tensor.permute(0, 3, 1, 2)
-    target = torch_image_tensor.to(device)
-    return target
+    return torch_image_tensor.to(device)
 
 def load_images_from_dir_new(image_dir: str, device, preprocess_func):
     """
