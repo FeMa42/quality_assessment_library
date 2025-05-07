@@ -18,6 +18,11 @@ from car_quality_estimator.car_quality_metric import load_car_quality_score
 class Metrics:
     """
     Compute a configurable subset of semantic + distribution metrics.
+
+    Note on Distribution Metrics:
+      - For complex metrics like FID, IS, and KID, we recommend processing input batches of at least 1000 samples.
+      - Please verify performance on large input batches, especially for high-dimensional data.
+      - Adjust the expected batch size based on available system memory and GPU constraints.
     """
 
     def __init__(
