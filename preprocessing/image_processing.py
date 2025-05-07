@@ -10,7 +10,7 @@ import torch
 import torch.nn.functional as F
 import timm
 import torchvision.transforms as T
-from metrics.metrics import compute_bounding_box
+from metrics.helpers import compute_bounding_box
 
 # =============================================================================
 # DINOv2 Feature Extraction
@@ -298,6 +298,65 @@ def remove_background_recursive(parent_folder):
         if pngs:
             print(f"Processing background removal in folder: {root}")
             remove_background_from_folder(root)
+
+# Define this function at module level (outside of any other function)
+def process_with_progress(folder):
+    """
+    Helper function to process a folder and return any errors.
+    
+    Args:
+        folder (str): Path to the folder to process
+        
+    Returns:
+        tuple: (folder_path, error_message or None)
+    """
+    try:
+        # from preprocessing.image_processing import remove_background_from_folder
+        remove_background_from_folder(folder, verbose=False)
+        return folder, None
+    except Exception as e:
+        return folder, str(e)
+
+def remove_background_recursive_parallel(parent_folder, max_workers=None):
+    """
+    Process background removal recursively on all PNG files using multiple processes
+    with tqdm progress bars.
+    
+    Args:
+        parent_folder (str): Root folder to start the recursive search
+        max_workers (int, optional): Maximum number of worker processes. 
+                                    If None, it will use the number of CPU cores.
+    """
+    import concurrent.futures
+    import multiprocessing
+    from tqdm import tqdm
+    
+    if max_workers is None:
+        max_workers = multiprocessing.cpu_count()
+    
+    # First, collect all folders that need processing
+    folders_to_process = []
+    for root, dirs, files in os.walk(parent_folder):
+        pngs = [f for f in files if f.lower().endswith('.png')]
+        if pngs:
+            folders_to_process.append(root)
+    
+    total_folders = len(folders_to_process)
+    print(f"Found {total_folders} folders with PNG images to process using {max_workers} worker processes")
+    
+    # Create a progress bar for the overall process
+    pbar = tqdm(total=total_folders, desc="Removing backgrounds", unit="folder")
+    
+    # Process folders in parallel
+    with concurrent.futures.ProcessPoolExecutor(max_workers=max_workers) as executor:
+        # Map is simpler and handles the results in order of completion
+        for folder, error in executor.map(process_with_progress, folders_to_process):
+            pbar.update(1)
+            if error:
+                pbar.write(f"Error in {folder}: {error}")
+    
+    pbar.close()
+    print(f"Background removal complete. Processed {total_folders} folders.")
 
 # =============================================================================
 # Equal Image Scaling Functions
