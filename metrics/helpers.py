@@ -12,7 +12,6 @@ from torchvision.transforms import ToTensor
 from rembg import remove
 import cv2
 import contextlib
-import pandas as pd 
 
 #############################
 #### Image Preprocessing ####
@@ -139,8 +138,7 @@ def load_images_from_dir(image_dir: str, device):
     torch_image_tensor = torch.tensor(np.array(all_images), dtype=torch.float32)
     # (num_frames, channels, height, width)
     torch_image_tensor = torch_image_tensor.permute(0, 3, 1, 2)
-    target = torch_image_tensor.to(device)
-    return target
+    return torch_image_tensor.to(device)
 
 def load_images_from_dir_new(image_dir: str, device, preprocess_func):
     """
@@ -193,6 +191,7 @@ def process_folder_new(original_folder, generated_folder, preprocess_func, metri
             gen_img = preprocess_func(gen_img)
             geo_metric.compute_image_pair(orig_img, gen_img)
         return geo_metric.get_average_metrics()
+    
     else:
         raise ValueError("Unsupported metric_class. Must be either Metrics or GeometryMetrics.")
 
@@ -442,6 +441,7 @@ def compare_summed_outline_normals(image1, image2, num_points=100):
         "sum_vector1_squared": sum_vector1_sq,
         "sum_vector2_squared": sum_vector2_sq,
     }
+
 
 ##############################################
 #### Definition of Custom Metrics Classes ####
