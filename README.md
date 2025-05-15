@@ -1,12 +1,24 @@
 # Quality Assessment Library
-This library provides a set of functions for assessing the quality of images and 3D objects. It is focused on estimating the quality of 3D objects using images. 
+
+This library provides a set of functions for assessing the quality of images and 3D objects. It is focused on estimating the quality of 3D objects using images.
 It provides two main functionalities:
+
 - General metrics: metrics that can be applied to any 3D object. These metrics include: MSE, CLIP-S, Spectral_MSE, D_lambda, ERGAS, PSNR, RASE, RMSE_wind, SAM, MS-SSIM, SSIM, UQI, VIF, LPIPS, SCC, FID, IS, KID. And are mainly based on torchmetrics.
 
 - **This branch is specifically designed for the assessment of TRELLIS.** It enables the evaluation of 3D objects reconstructed with the TRELLIS model. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. It additionally includes the calculation of geometric metrics: Relative Difference of Bounding-Box Aspect Ratio, Relative Difference of occupied Pixel area, Relative Difference of Angle Difference of Silhouette Outline Normals (Pairwise and summed), Relative Difference of Squared Angle Difference of Silhouette Outline Normals (Pairwise and Summed). It will also compute the metrics from the Car Quality Classifier for the ground truth images, the generated images and their relative difference.
 
-
 ## Installation
+
+### System Dependencies
+
+Before installing the Python dependencies, ensure the following system dependencies are installed:
+
+- Dependencies for 3D Metrics:
+  - `libxrender1` (Linux: `sudo apt update && sudo apt install -y libxrender1`)
+- Dependencies for 2D Metrics:
+  - /
+
+If you need this Package for 2D Metrics only, you will not need to install the dependencies for the 3D Metrics.
 
 ### Option 1: Quick installation with models
 
@@ -21,7 +33,7 @@ cd quality_assessment_library
 python scripts/install.py --develop
 ```
 
-This will install the package and download all required model files into the cloned repository. 
+This will install the package and download all required model files into the cloned repository.
 
 ### Option 2: Manual installation
 
@@ -34,7 +46,9 @@ pip install -e . --use-pep517
 # Download the models
 python -m scripts.download_models --output-dir ./car_quality_estimator/models
 ```
+
 ## Data Preprocessing
+
 `data_preprocessing.ipynb` provides a pipeline for processing generated Trellis viewpoints so that they can be compared to Ground Truth evaluation data. It includes functionalities for Background Removal, Equal Scaling and Visualization. It also includes methods to align the images in the folders. Front View Detection detects the front view of a car in a folder of car images and enables aligning the viewpoints.
 
 ## Usage of general metrics
@@ -47,7 +61,7 @@ We also provide an option to compute the metrics for an entire subdirectory with
 
 Example usage of the car quality metrics can be found in `car_quality_metrics.ipynb`.
 
-## Basic usage:
+## Basic usage
 
 ```python
 from car_quality_estimator.car_quality_metric import load_car_quality_score
@@ -69,6 +83,7 @@ all_images = [PIL.Image.open(image).convert("RGB") for image in all_images]
 scores = car_quality_metric.compute_scores_no_reference(all_images)
 print(scores)
 ```
+
 ## TRELLIS Benchmarking
 
 ## Further resources
