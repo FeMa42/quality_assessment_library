@@ -129,7 +129,7 @@ def preprocess_image_rgba(
         return ToTensor()(image).float()
     return image
 
-def load_images_from_dir(image_dir: str, device):
+def load_images_from_dir_legacy(image_dir: str, device):
     """
     Load all images from a directory and return them as a tensor with shape (num_frames, channels, height, width)
     """
@@ -140,7 +140,7 @@ def load_images_from_dir(image_dir: str, device):
     torch_image_tensor = torch_image_tensor.permute(0, 3, 1, 2)
     return torch_image_tensor.to(device)
 
-def load_images_from_dir_new(image_dir: str, device, preprocess_func):
+def load_images_from_dir(image_dir: str, device, preprocess_func):
     """
     Load all images from a directory, preprocess them with preprocess_func,
     and return a tensor of shape (num_frames, channels, height, width).
@@ -152,7 +152,7 @@ def load_images_from_dir_new(image_dir: str, device, preprocess_func):
     tensor = torch.tensor(tensor, dtype=torch.float32).to(device)
     return tensor
 
-def process_folder_new(original_folder, generated_folder, preprocess_func, metric_class, device=None, **metric_kwargs):
+def process_folder(original_folder, generated_folder, preprocess_func, metric_class, device=None, **metric_kwargs):
     """
     Process a pair of folders using a common interface.
     
@@ -167,12 +167,12 @@ def process_folder_new(original_folder, generated_folder, preprocess_func, metri
     Returns:
       dict: Averaged metrics.
     """
-    print(f"[process_folder_new] class={metric_class.__name__}, kwargs={metric_kwargs}")
+    print(f"[process_folder] class={metric_class.__name__}, kwargs={metric_kwargs}")
 
     if metric_class.__name__ == "Metrics":
         semantic_metric = metric_class(device=device, **metric_kwargs)
-        input_tensor  = load_images_from_dir_new(original_folder, device, preprocess_func)
-        target_tensor = load_images_from_dir_new(generated_folder,  device, preprocess_func)
+        input_tensor  = load_images_from_dir(original_folder, device, preprocess_func)
+        target_tensor = load_images_from_dir(generated_folder,  device, preprocess_func)
         return semantic_metric.compute_image(input_tensor, target_tensor)
     
     elif metric_class.__name__ == "GeometryMetrics":

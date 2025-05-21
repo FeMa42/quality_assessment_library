@@ -4,9 +4,10 @@ import glob
 import shutil
 import tempfile
 import torch
+import pandas as pd
 
 from metrics.metrics import Metrics, GeometryMetrics, CarQualityMetrics, compute_global_distribution_metrics
-from metrics.helpers import process_folder_new, preprocess_image, preprocess_image_rgba
+from metrics.helpers import process_folder, preprocess_image, preprocess_image_rgba
 
 
 def tensor_to_serializable(obj):
@@ -100,7 +101,7 @@ def process_metrics_by_viewpoint(
 
             # semantic
             if semantic_enabled:
-                sem = process_folder_new(
+                sem = process_folder(
                     original_folder=gt_tmp,
                     generated_folder=gen_tmp,
                     preprocess_func=preprocess_image,
@@ -115,7 +116,7 @@ def process_metrics_by_viewpoint(
 
             # geometric
             if geometric_enabled:
-                geom = process_folder_new(
+                geom = process_folder(
                     original_folder=gt_tmp,
                     generated_folder=gen_tmp,
                     preprocess_func=preprocess_image_rgba,
