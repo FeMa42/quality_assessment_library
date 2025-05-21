@@ -12,6 +12,8 @@ from torchvision.transforms import ToTensor
 from rembg import remove
 import cv2
 import contextlib
+import pandas as pd
+from tqdm import tqdm
 
 #############################
 #### Image Preprocessing ####
@@ -451,7 +453,6 @@ def get_caption_from_metadata(metadata_df, sha256: str, caption_col: str = "capt
     """
     Get the caption from the metadata DataFrame for a given sha256.
     """
-
     metadata_row = metadata_df[metadata_df["sha256"] == sha256]
     if metadata_row.empty:
         print(f"No metadata found for {sha256}. Skipping.")
@@ -465,6 +466,45 @@ def get_caption_from_metadata(metadata_df, sha256: str, caption_col: str = "capt
     else:
         raise ValueError(f"Unexpected type for caption: {type(metadata_caption)}. Expected str or list.")
     return metadata_caption
+
+def process_folder_with_metadata_file(generated_base_folder, metadata_file_path, prompt_metric, preprocess_image):
+    """
+    Process a folder of generated images and compute the prompt metric using the metadata from the metadata file.
+    This function loads images from the specified folder, preprocesses them using the provided function,
+    and evaluates them against the given object prompt using the provided prompt metric.
+    Args:
+        generated_base_folder (str): Path to the folder containing generated images.
+        metadata_file_path (str): Path to the metadata file.
+        prompt_metric: function which estimates the prompt metrics. E.g. Instance of ImageBasedPromptEvaluator.
+        preprocess_image: function which preprocesses the image. E.g. preprocess_image_rgba.
+    """
+    # Load metadata file
+    metadata_file = pd.read_csv(metadata_file_path)
+    gen_object_folder = os.listdir(generated_base_folder)
+
+    all_scores = {}
+    for i in tqdm(range(len(gen_object_folder))):
+        obj_folder = gen_object_folder[i]
+        object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "caption_3d_prompt")
+        if object_prompt is None:
+            continue
+        promp_score = process_folder_with_prompt(generated_folder=os.path.join(generated_base_folder, obj_folder),
+                                                object_prompts=object_prompt,
+                                                preprocess_func=preprocess_image,
+                                                prompt_metric=prompt_metric)
+        for key, value in promp_score.items():
+            if key not in all_scores:
+                all_scores[key] = []
+            all_scores[key].append(value)
+
+
+    # get mean and standard deviation of all_scores
+    mean_scores = {}
+    std_scores = {}
+    for key, value in all_scores.items():
+        std_scores[key] = pd.Series(value).std()
+        mean_scores[key] = pd.Series(value).mean()
+    return mean_scores, std_scores
 
 def load_images_from_dir_to_pil(image_dir: str, preprocess_func):
     """
@@ -531,3 +571,59 @@ def process_folder_with_prompt(
     image_scores = prompt_metric.evaluate(generated_images, object_prompts)
     return image_scores
 
+def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, florence_wheelbase_od):
+    """
+    Evaluate the vehicle dimensions of generated objects against the metadata file.
+    Args:
+        generated_base_folder (str): Path to the folder containing generated objects.
+        metadata_file_path (str): Path to the metadata file.
+        florence_wheelbase_od (FlorenceWheelbaseOD): Instance of the FlorenceWheelbaseOD class.
+    """
+    # Load the metadata file
+    metadata_file = pd.read_csv(metadata_file_path)
+    all_obj_sha256 = os.listdir(generated_base_folder)
+    dimension_differences = {
+        "length_difference": [],
+        "width_difference": [],
+        "wheelbase_difference": []
+    }
+    for sha256 in all_obj_sha256:
+        # Check if the folder exists
+        generated_folder = os.path.join(generated_base_folder, sha256)
+        if not os.path.exists(generated_folder):
+            print(f"Folder {generated_folder} does not exist.")
+            continue
+        generated_vehicle_data = florence_wheelbase_od.get_vehicle_dimensions_from_folder(generated_folder, normalize=True)
+        metadata_row = metadata_file[metadata_file["sha256"] == sha256]
+        if metadata_row.empty:
+            print(f"Metadata for {sha256} not found.")
+        else:
+            # Extract the metadata values
+            metadata_row = metadata_row.iloc[0]
+            length = metadata_row["normalized_depth_of_object"]
+            width = metadata_row["normalized_width_of_object"]
+            wheelbase = metadata_row["normalized_wheelbase"]
+            # compare the generated vehicle data with the metadata
+            length_diff = abs(generated_vehicle_data["depth_of_object"] - length)
+            width_diff = abs(generated_vehicle_data["width_of_object"] - width)
+            wheelbase_diff = abs(generated_vehicle_data["wheelbase"] - wheelbase)
+            # Store the differences in a dictionary for lengths, widths, and wheelbases
+            dimension_differences["length_difference"].append(length_diff)
+            dimension_differences["width_difference"].append(width_diff)
+            dimension_differences["wheelbase_difference"].append(wheelbase_diff)
+    # Calculate the average of the differences
+
+
+            
+    # Calculate the average of the average differences
+    overall_average_diff = {}
+    standard_deviation = {}
+    for key, value in dimension_differences.items():
+        if len(value) > 0:
+            overall_average_diff[key] = np.mean(value)
+            standard_deviation[key] = np.std(value)
+        else:
+            overall_average_diff[key] = None
+            standard_deviation[key] = None
+    
+    return overall_average_diff, standard_deviation
