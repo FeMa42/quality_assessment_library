@@ -16,6 +16,7 @@ from metrics.helpers import preprocess_image, process_folder_with_metadata_file
 from metrics.viewpoint_florence import FlorenceWheelbaseOD
 from metrics.helpers import evaluate_vehicle_dimensions
 from preprocessing.image_processing import remove_background_recursive
+from preprocessing.image_processing import remove_background_recursive_parallel
 from preprocessing.image_processing import align_views, load_dino, get_dino_transform
 from preprocessing.image_processing import restructure_images
 from preprocessing.image_processing import process_equal_scaling_structure
@@ -61,6 +62,10 @@ def parse_arguments():
                         help='Override config to skip prompt following')
     parser.add_argument('--skip-vehicle-dimensions', action='store_true',
                         help='Override config to skip vehicle dimensions')
+    parser.add_argument('--filter-by-metadata', action='store_true',
+                        help='Override config to enable filtering by metadata')
+    parser.add_argument('--no-filter-by-metadata', action='store_true',
+                        help='Override config to disable filtering by metadata')
     
     # Additional options
     parser.add_argument('--device', type=str, choices=['auto', 'cuda', 'cpu'],
@@ -117,6 +122,10 @@ def merge_config_with_args(config, args):
         config['evaluation']['prompt_following']['enabled'] = False
     if args.skip_vehicle_dimensions:
         config['evaluation']['vehicle_dimensions']['enabled'] = False
+    if args.filter_by_metadata:
+        config['evaluation']['filter_by_metadata']['enabled'] = True
+    if args.no_filter_by_metadata:
+        config['evaluation']['filter_by_metadata']['enabled'] = False
     
     # Override runtime settings
     if args.device:
@@ -170,21 +179,24 @@ def check_geometric_metrics_requirements(config_path, gen_folder):
     return False, gen_folder
 
 
-def run_background_removal(gen_folder, force=False):
+def run_background_removal(gen_folder, force=False, single_thread=False):
     """Run background removal on generated images."""
     logging.info("Running background removal...")
     
-    for name in os.listdir(gen_folder):
-        folder_path = os.path.join(gen_folder, name)
-        if os.path.isdir(folder_path):
-            # Check if already processed
-            has_bg_removed = any('_no_bg' in f for f in os.listdir(folder_path) if f.endswith('.png'))
-            if has_bg_removed and not force:
-                logging.info(f"Background already removed for {name}, skipping...")
-                continue
-                
-            logging.info(f"Processing {folder_path!r} for background removal...")
-            remove_background_recursive(folder_path)
+    if single_thread:
+        for name in os.listdir(gen_folder):
+            folder_path = os.path.join(gen_folder, name)
+            if os.path.isdir(folder_path):
+                # Check if already processed
+                has_bg_removed = any('_no_bg' in f for f in os.listdir(folder_path) if f.endswith('.png'))
+                if has_bg_removed and not force:
+                    logging.info(f"Background already removed for {name}, skipping...")
+                    continue
+                logging.info(f"Processing {folder_path!r} for background removal...")
+                remove_background_recursive(folder_path)
+    else:
+        remove_background_recursive_parallel(gen_folder, max_workers=12)
+            
 
 
 def run_view_alignment(gen_folder, gt_folder, device, force=False):
@@ -238,15 +250,18 @@ def run_scale_equalization(gt_folder, gen_folder, force=False, canvas_size=(768,
     )
 
 
-def evaluate_semantic_geometric(gt_folder, gen_folder, config_path, device):
+def evaluate_semantic_geometric(gt_folder, gen_folder, config_path, device, metadata_file_path=None):
     """Evaluate semantic and geometric metrics."""
     logging.info("Calculating Semantic and Geometry metrics...")
+    if metadata_file_path:
+        logging.info(f"Using metadata file: {metadata_file_path} for filtering objects")
     
     metrics_result = process_metrics_by_viewpoint(
         ground_truth_folder=gt_folder,
         generated_folder=gen_folder,
         device=device,
         config_path=config_path,
+        metadata_file_path=metadata_file_path
     )
     
     # Clear GPU memory
@@ -337,6 +352,7 @@ def main():
     output_folder = config['paths']['output_folder']
     metadata_file = config['paths']['metadata_file']
     metrics_config_path = config['paths']['metrics_config']
+    filter_by_metadata = config['evaluation']['filter_by_metadata']['enabled']
     
     # Determine preprocessing steps
     preprocessing_steps = {
@@ -395,8 +411,12 @@ def main():
     
     # Run evaluations based on config
     if config['evaluation']['semantic_geometric']['enabled']:
+        if filter_by_metadata:
+            metadata_file_path_vp = metadata_file
+        else: 
+            metadata_file_path_vp = None
         metrics_result = evaluate_semantic_geometric(
-            eval_gt_folder, eval_gen_folder, metrics_config_path, device
+            eval_gt_folder, eval_gen_folder, metrics_config_path, device, metadata_file_path_vp
         )
         all_results.update(tensor_to_serializable(metrics_result))
         

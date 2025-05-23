@@ -38,6 +38,7 @@ def process_metrics_by_viewpoint(
     generated_folder: str,
     device: str = "cuda",
     config_path: str = None,
+    metadata_file_path: str = None,
 ):
     cfg = {}
     if config_path:
@@ -64,6 +65,14 @@ def process_metrics_by_viewpoint(
         d for d in os.listdir(ground_truth_folder)
         if os.path.isdir(os.path.join(ground_truth_folder, d))
     ]
+
+    if metadata_file_path is not None:
+        metadata_df = pd.read_csv(metadata_file_path) # metadata_df["sha256"] 
+        metadata_df = metadata_df[metadata_df["sha256"].isin(obj_ids)]
+        obj_ids = metadata_df["sha256"].tolist()
+        if not obj_ids:
+            raise ValueError("No valid object IDs found in the metadata file.")
+
     viewpoint_set = set()
     for obj in obj_ids:
         for fn in glob.glob(os.path.join(ground_truth_folder, obj, "*.png")):
