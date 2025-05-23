@@ -486,7 +486,7 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
     all_scores = {}
     for i in tqdm(range(len(gen_object_folder))):
         obj_folder = gen_object_folder[i]
-        object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "caption_3d_prompt")
+        object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "refined_3d_prompt")
         if object_prompt is None:
             continue
         promp_score = process_folder_with_prompt(generated_folder=os.path.join(generated_base_folder, obj_folder),
