@@ -481,6 +481,7 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
     # Load metadata file
     metadata_file = pd.read_csv(metadata_file_path)
     gen_object_folder = os.listdir(generated_base_folder)
+    gen_object_folder = [f for f in gen_object_folder if os.path.isdir(os.path.join(generated_base_folder, f))]
 
     all_scores = {}
     for i in tqdm(range(len(gen_object_folder))):
@@ -587,7 +588,7 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
         "width_difference": [],
         "wheelbase_difference": []
     }
-    for sha256 in all_obj_sha256:
+    for sha256 in tqdm(all_obj_sha256):
         # Check if the folder exists
         generated_folder = os.path.join(generated_base_folder, sha256)
         if not os.path.exists(generated_folder):

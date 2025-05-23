@@ -1,9 +1,25 @@
 # Quality Assessment Library
-This library provides a set of functions for assessing the quality of images and 3D objects. It is focused on estimating the quality of 3D objects using images. 
+This library provides a set of functions for assessing the quality of 3D objects. It is focused on estimating the quality of generated 3D objects using images. 
 It provides two main functionalities:
-- General metrics: metrics that can be applied to any 3D object. These metrics include: MSE, CLIP-S, Spectral_MSE, D_lambda, ERGAS, PSNR, RASE, RMSE_wind, SAM, MS-SSIM, SSIM, UQI, VIF, LPIPS, SCC, FID, IS, KID. And are mainly based on torchmetrics.
+- General metrics (Semantic Metrics): metrics that can be applied to any 3D object. These metrics include: MSE, CLIP-S, Spectral_MSE, D_lambda, ERGAS, PSNR, RASE, RMSE_wind, SAM, MS-SSIM, SSIM, UQI, VIF, LPIPS, SCC. And are mainly based on torchmetrics.
+- Geometry Metrics:
+  - Rel_BB_Aspect_Ratio_Diff: Bounding box aspect ratio difference
+  - Rel_Pixel_Area_Diff: Relative pixel area difference
+  - Squared_Outline_Normals_Angle_Diff: Squared difference of the angle between the outline normals
+  - Squared_Summed_Outline_Normals_Angle_Diff: Squared difference of the summed outline normals
+- Distribution Metrics:
+  - Frechet Inception Distance (FID): Measures the distance between two distributions
+  - Kernel Inception Distance (KID): Similar to FID but uses a different approach to measure distance
+  - Inception Score (IS): Measures the quality of generated images
+- Prompt alignment metrics:
+  - CLIP-S: Measures the alignment of generated images with text prompts
+  - ImageReward: Measures the quality of generated images using a reward model
+- Vehicle Based Dimension comparison
+  - Width and length comparison (normalized by height)
+  - Vehicle wheelbase comparison (normalized by height). Uses Florence OD to detect the wheels.
 
-- **This branch is specifically designed for the assessment of TRELLIS.** It enables the evaluation of 3D objects reconstructed with the TRELLIS model. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. It additionally includes the calculation of geometric metrics: Relative Difference of Bounding-Box Aspect Ratio, Relative Difference of occupied Pixel area, Relative Difference of Angle Difference of Silhouette Outline Normals (Pairwise and summed), Relative Difference of Squared Angle Difference of Silhouette Outline Normals (Pairwise and Summed). It will also compute the metrics from the Car Quality Classifier for the ground truth images, the generated images and their relative difference.
+**This repository is specifically designed for the assessment of Generative Models on the MeshFleet Benchmark.** 
+It enables the evaluation of 3D objects reconstructed with a generative model like TRELLIS. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. It additionally includes the calculation of geometric metrics: Relative Difference of Bounding-Box Aspect Ratio, Relative Difference of occupied Pixel area, Relative Difference of Angle Difference of Silhouette Outline Normals (Pairwise and summed), Relative Difference of Squared Angle Difference of Silhouette Outline Normals (Pairwise and Summed). 
 
 
 ## Installation
@@ -34,7 +50,55 @@ pip install -e . --use-pep517
 # Download the models
 python -m scripts.download_models --output-dir ./car_quality_estimator/models
 ```
+
+## MeshFleet Benchmark
+
+### Dataset
+To run the MeshFleet benchmark, you need to download the MeshFleet dataset (you only need the `benchmark_data` folder). The dataset can be downloaded from the following link: [MeshFleet Dataset](https://huggingface.co/datasets/DamianBoborzi/MeshFleet). You can place the downloaded dataset in the `data` folder of the repository or another location of your choice.
+
+> Note: You can also finetune the model on the data referenced in the `meshfleet_benchmark/meshfleet_train.csv` file. Those images are not used for the evaluation. 
+
+### Conditioning Images and Prompts
+You can use the `meshfleet_cond_images_parquet` as the conditioning images for your model. For text to 3D you can use the `caption_3d_prompt` from the `meshfleet_benchmark/meshfleet_test.csv` file. For the evaluation, renders of the generated objects are reguired. Currently we use 12 images, rendered at horizontal viewpoints around the object with a distance of 30 degrees. The images are generated at a fixed elevation of 90 degrees. The azimuths and elevations are defined as follows:
+```
+azimuths =    [ 0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
+elevations =  [90, 90, 90, 90,  90,  90,  90,  90,  90,  90,  90,  90]
+```
+
+### Evaluation
+Lastly you need to set the reference and generated data (path to the rendered images of your objects) paths in `meshfleet_benchmark/benchmark_config.yaml` file. The paths should point to the folders containing the reference and generated images. The folder structure should look like this:
+
+```
+data/
+├── meshfleet_test/
+│   ├── 2c21b97ff3dc4fc3b1ef9e4bb0164318/
+│   │   ├── 000.png
+│   │   ├── 001.png
+│   │   ├── 002.png
+...
+│   ├── 2c21b97ff3dc4fc3b1ef9e4bb0164318/
+│   │   ├── 000.png
+│   │   ├── 001.png
+│   │   ├── 002.png
+...
+├── meshfleet_generated/
+│   ├── 2c21b97ff3dc4fc3b1ef9e4bb0164318/
+│   │   ├── 000.png
+│   │   ├── 001.png
+│   │   ├── 002.png
+...
+```
+
+After downloading the dataset and setting the paths, you can run the benchmark by executing the following command:
+
+```bash
+python run_meshfleet_eval.py
+```
+
+By default the script will also preprocess the images (removing background, aligning the images and scaling the objects for the geometry metrics). The preprocessing can be skipped by setting the `--skip-all-preprocessing` flag or by setting the corresponding flags in the `meshfleet_benchmark/benchmark_config.yaml` file. 
+
 ## Data Preprocessing
+
 `data_preprocessing.ipynb` provides a pipeline for processing generated Trellis viewpoints so that they can be compared to Ground Truth evaluation data. It includes functionalities for Background Removal, Equal Scaling and Visualization. It also includes methods to align the images in the folders. Front View Detection detects the front view of a car in a folder of car images and enables aligning the viewpoints.
 
 ## Usage of general metrics
@@ -69,7 +133,6 @@ all_images = [PIL.Image.open(image).convert("RGB") for image in all_images]
 scores = car_quality_metric.compute_scores_no_reference(all_images)
 print(scores)
 ```
-## TRELLIS Benchmarking
 
 ## Further resources
 
