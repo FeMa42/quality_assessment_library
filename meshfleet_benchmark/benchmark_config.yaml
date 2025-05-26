@@ -2,24 +2,25 @@
 
 # Input/Output paths
 paths:
-  ground_truth_folder: "example_data/Meshfleet_Eval/Ground_Truth"
+  ground_truth_folder: "data/meshfleet/benchmark_data/meshfleet_eval_images"
   generated_folder: "example_data/Meshfleet_Eval/Results_000"
-  output_folder: "data/meshfleet_eval_output"
+  # generated_folder: "/mnt/damian/Projects/TRELLIS/prompt_alignment_images/output_flux_base_maxR"
+  output_folder: "data/meshfleet_eval_output_flux_lora_maxR"
   metadata_file: "meshfleet_benchmark/meshfleet_test.csv"
   metrics_config: "meshfleet_benchmark/config_meshfleet.json"
 
 # Preprocessing settings
 preprocessing:
   background_removal:
-    enabled: true
+    enabled: false
     force: false
   
   view_alignment:
-    enabled: true
+    enabled: false
     force: false
   
   scale_equalization:
-    enabled: true
+    enabled: false
     force: false
     canvas_size: [768, 768]
     fill_ratio: 0.9
@@ -33,6 +34,9 @@ evaluation:
     enabled: true
   
   vehicle_dimensions:
+    enabled: true
+  
+  filter_by_metadata:
     enabled: true
 
 # Runtime settings

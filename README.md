@@ -19,8 +19,7 @@ It provides two main functionalities:
   - Vehicle wheelbase comparison (normalized by height). Uses Florence OD to detect the wheels.
 
 **This repository is specifically designed for the assessment of Generative Models on the MeshFleet Benchmark.** 
-It enables the evaluation of 3D objects reconstructed with a generative model like TRELLIS. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. It additionally includes the calculation of geometric metrics: Relative Difference of Bounding-Box Aspect Ratio, Relative Difference of occupied Pixel area, Relative Difference of Angle Difference of Silhouette Outline Normals (Pairwise and summed), Relative Difference of Squared Angle Difference of Silhouette Outline Normals (Pairwise and Summed). 
-
+It enables the evaluation of 3D objects reconstructed with a generative model like TRELLIS. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. 
 
 ## Installation
 
@@ -54,12 +53,32 @@ python -m scripts.download_models --output-dir ./car_quality_estimator/models
 ## MeshFleet Benchmark
 
 ### Dataset
-To run the MeshFleet benchmark, you need to download the MeshFleet dataset (you only need the `benchmark_data` folder). The dataset can be downloaded from the following link: [MeshFleet Dataset](https://huggingface.co/datasets/DamianBoborzi/MeshFleet). You can place the downloaded dataset in the `data` folder of the repository or another location of your choice.
+To run the MeshFleet benchmark, you need to download the MeshFleet dataset. The dataset can be downloaded from the following link: [MeshFleet Dataset](https://huggingface.co/datasets/DamianBoborzi/MeshFleet). 
+
+#### Automated Download
+The easiest way to download and set up the benchmark data is using our download script:
+
+```bash
+# Use the setup script which also creates a config template
+bash scripts/setup_meshfleet_eval.sh
+
+# or download the benchmark data directly using the download script
+python -m scripts.download_meshfleet_benchmark --output-dir ./data/meshfleet
+```
+
+This will:
+1. Download all files from the `benchmark_data` folder
+2. Download the CSV files (`meshfleet_test.csv` and `meshfleet_train.csv`)
+3. Unpack the parquet files into the expected folder structure
+4. Create a template configuration file
+
+#### Manual Download
+For the benchmark itself you only need `meshfleet_test.csv` file and the files in the `benchmark_data` folder (which contains the conditioning images `benchmark_data/meshfleet_cond_images` and the evaluation images in `benchmark_data/meshfleet_eval_images`). You can place the downloaded dataset in the `data` folder of the repository or another location of your choice. 
 
 > Note: You can also finetune the model on the data referenced in the `meshfleet_benchmark/meshfleet_train.csv` file. Those images are not used for the evaluation. 
 
 ### Conditioning Images and Prompts
-You can use the `meshfleet_cond_images_parquet` as the conditioning images for your model. For text to 3D you can use the `caption_3d_prompt` from the `meshfleet_benchmark/meshfleet_test.csv` file. For the evaluation, renders of the generated objects are reguired. Currently we use 12 images, rendered at horizontal viewpoints around the object with a distance of 30 degrees. The images are generated at a fixed elevation of 90 degrees. The azimuths and elevations are defined as follows:
+You can use the `meshfleet_cond_images` as the conditioning images for your model. For text to 3D you can use the `refined_3d_prompt` from the `meshfleet_test.csv` file. For the evaluation, renders of the generated objects are reguired. Currently we use 12 images, rendered at horizontal viewpoints around the object (30 degree steps) with a fixed distance at 1.5 (note that we preprocess the images and the distance does not have to align perfectly). The images are generated at a fixed elevation of 90 degrees. The azimuths and elevations are defined as follows:
 ```
 azimuths =    [ 0, 30, 60, 90, 120, 150, 180, 210, 240, 270, 300, 330]
 elevations =  [90, 90, 90, 90,  90,  90,  90,  90,  90,  90,  90,  90]
@@ -70,19 +89,19 @@ Lastly you need to set the reference and generated data (path to the rendered im
 
 ```
 data/
-├── meshfleet_test/
-│   ├── 2c21b97ff3dc4fc3b1ef9e4bb0164318/
+├── meshfleet_eval_images/
+│   ├── 2c21b97ff3dc4fc...3b1ef9e4bb0164318/
 │   │   ├── 000.png
 │   │   ├── 001.png
 │   │   ├── 002.png
 ...
-│   ├── 2c21b97ff3dc4fc3b1ef9e4bb0164318/
+│   ├── 3d43c94a4e37fa2...04b1e99e8c4f3c9a6d/
 │   │   ├── 000.png
 │   │   ├── 001.png
 │   │   ├── 002.png
 ...
 ├── meshfleet_generated/
-│   ├── 2c21b97ff3dc4fc3b1ef9e4bb0164318/
+│   ├── 2c21b97ff3dc4fc...3b1ef9e4bb0164318/
 │   │   ├── 000.png
 │   │   ├── 001.png
 │   │   ├── 002.png
