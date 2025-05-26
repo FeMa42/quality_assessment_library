@@ -481,11 +481,12 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
     # Load metadata file
     metadata_file = pd.read_csv(metadata_file_path)
     gen_object_folder = os.listdir(generated_base_folder)
+    gen_object_folder = [f for f in gen_object_folder if os.path.isdir(os.path.join(generated_base_folder, f))]
 
     all_scores = {}
     for i in tqdm(range(len(gen_object_folder))):
         obj_folder = gen_object_folder[i]
-        object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "caption_3d_prompt")
+        object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "refined_3d_prompt")
         if object_prompt is None:
             continue
         promp_score = process_folder_with_prompt(generated_folder=os.path.join(generated_base_folder, obj_folder),
@@ -587,7 +588,7 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
         "width_difference": [],
         "wheelbase_difference": []
     }
-    for sha256 in all_obj_sha256:
+    for sha256 in tqdm(all_obj_sha256):
         # Check if the folder exists
         generated_folder = os.path.join(generated_base_folder, sha256)
         if not os.path.exists(generated_folder):

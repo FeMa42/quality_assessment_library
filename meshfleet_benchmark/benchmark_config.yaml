@@ -1,0 +1,44 @@
+# Meshfleet Benchmark Configuration
+
+# Input/Output paths
+paths:
+  ground_truth_folder: "data/meshfleet/benchmark_data/meshfleet_eval_images"
+  generated_folder: "example_data/Meshfleet_Eval/Results_000"
+  output_folder: "data/meshfleet_eval_output_flux_lora_maxR"
+  metadata_file: "meshfleet_benchmark/meshfleet_test.csv"
+  metrics_config: "meshfleet_benchmark/config_meshfleet.json"
+
+# Preprocessing settings
+preprocessing:
+  background_removal:
+    enabled: true
+    force: false
+  
+  view_alignment:
+    enabled: true
+    force: false
+  
+  scale_equalization:
+    enabled: true
+    force: false
+    canvas_size: [768, 768]
+    fill_ratio: 0.9
+
+# Evaluation settings
+evaluation:
+  semantic_geometric:
+    enabled: true
+  
+  prompt_following:
+    enabled: true
+  
+  vehicle_dimensions:
+    enabled: true
+  
+  filter_by_metadata:
+    enabled: true
+
+# Runtime settings
+runtime:
+  device: "auto"  # "auto", "cuda", or "cpu"
+  omp_num_threads: "1"
