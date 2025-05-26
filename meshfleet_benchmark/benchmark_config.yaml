@@ -4,7 +4,6 @@
 paths:
   ground_truth_folder: "data/meshfleet/benchmark_data/meshfleet_eval_images"
   generated_folder: "example_data/Meshfleet_Eval/Results_000"
-  # generated_folder: "/mnt/damian/Projects/TRELLIS/prompt_alignment_images/output_flux_base_maxR"
   output_folder: "data/meshfleet_eval_output_flux_lora_maxR"
   metadata_file: "meshfleet_benchmark/meshfleet_test.csv"
   metrics_config: "meshfleet_benchmark/config_meshfleet.json"
@@ -12,15 +11,15 @@ paths:
 # Preprocessing settings
 preprocessing:
   background_removal:
-    enabled: false
+    enabled: true
     force: false
   
   view_alignment:
-    enabled: false
+    enabled: true
     force: false
   
   scale_equalization:
-    enabled: false
+    enabled: true
     force: false
     canvas_size: [768, 768]
     fill_ratio: 0.9
