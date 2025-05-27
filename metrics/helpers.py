@@ -169,7 +169,7 @@ def process_folder(original_folder, generated_folder, preprocess_func, metric_cl
     Returns:
       dict: Averaged metrics.
     """
-    print(f"[process_folder] class={metric_class.__name__}, kwargs={metric_kwargs}")
+    # print(f"[process_folder] class={metric_class.__name__}, kwargs={metric_kwargs}")
 
     if metric_class.__name__ == "Metrics":
         semantic_metric = metric_class(device=device, **metric_kwargs)
@@ -484,6 +484,7 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
     gen_object_folder = [f for f in gen_object_folder if os.path.isdir(os.path.join(generated_base_folder, f))]
 
     all_scores = {}
+    print(f"[PROMPT FOLLOWING] Processing {len(gen_object_folder)} generated objects with metadata file {metadata_file_path}...")
     for i in tqdm(range(len(gen_object_folder))):
         obj_folder = gen_object_folder[i]
         object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "refined_3d_prompt")
@@ -583,11 +584,13 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
     # Load the metadata file
     metadata_file = pd.read_csv(metadata_file_path)
     all_obj_sha256 = os.listdir(generated_base_folder)
+    all_obj_sha256 = [f for f in all_obj_sha256 if os.path.isdir(os.path.join(generated_base_folder, f))]
     dimension_differences = {
         "length_difference": [],
         "width_difference": [],
         "wheelbase_difference": []
     }
+    print(f"[VEHICLE DIMENSIONS] Processing {len(all_obj_sha256)} generated objects with metadata file {metadata_file_path}...")
     for sha256 in tqdm(all_obj_sha256):
         # Check if the folder exists
         generated_folder = os.path.join(generated_base_folder, sha256)
@@ -612,11 +615,8 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
             dimension_differences["length_difference"].append(length_diff)
             dimension_differences["width_difference"].append(width_diff)
             dimension_differences["wheelbase_difference"].append(wheelbase_diff)
+    
     # Calculate the average of the differences
-
-
-            
-    # Calculate the average of the average differences
     overall_average_diff = {}
     standard_deviation = {}
     for key, value in dimension_differences.items():

@@ -5,7 +5,7 @@ import shutil
 import tempfile
 import torch
 import pandas as pd
-
+from tqdm import tqdm
 from metrics.metrics import Metrics, GeometryMetrics, CarQualityMetrics, compute_global_distribution_metrics
 from metrics.helpers import process_folder, preprocess_image, preprocess_image_rgba
 
@@ -91,9 +91,9 @@ def process_metrics_by_viewpoint(
             device=device,
             metrics_list=car_list,
             )
-
-    for vp in sorted(viewpoint_set):
-        print(f"Processing viewpoint {vp}...")
+    print(f"[VIEWPOINT METRICS] Processing {len(obj_ids)} objects with {len(viewpoint_set)} viewpoints...")
+    for vp in tqdm(sorted(viewpoint_set)):
+        # print(f"Processing viewpoint {vp}...")
 
         with tempfile.TemporaryDirectory() as gt_tmp, tempfile.TemporaryDirectory() as gen_tmp:
             for obj in obj_ids:
