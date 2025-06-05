@@ -1,0 +1,20 @@
+{
+  "per_object": {
+    "example_3d_ref_mesh.obj": {
+      "Hausdorff": 5.102196573270515e-15,
+      "Hausdorff_Percentile": 4.070144838902081e-15,
+      "MASD": 1.0964651504117141e-15,
+      "ASSD": 1.0964651504117141e-15,
+      "NSD": 1.0,
+      "BIoU": 1.0
+    }
+  },
+  "overall_3d_metrics": {
+    "Hausdorff": 5.102196573270515e-15,
+    "Hausdorff_Percentile": 4.070144838902081e-15,
+    "MASD": 1.0964651504117141e-15,
+    "ASSD": 1.0964651504117141e-15,
+    "NSD": 1.0,
+    "BIoU": 1.0
+  }
+}

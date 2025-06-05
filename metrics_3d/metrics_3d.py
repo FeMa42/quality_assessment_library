@@ -1,549 +1,219 @@
 import os
-import glob
-from PIL import Image
-import numpy as np
-import torch
-import torch.nn.functional as F
-from typing import Optional, List
-from functools import partial
-
-from metrics.helpers import (
-    compare_bounding_boxes,
-    compare_px_area,
-    compare_outline_normals,
-    compare_summed_outline_normals,
+from MeshMetrics.metrics import DistanceMetrics
+from metrics_3d.helpers import (
+    trimesh_to_vtk,
+    safe_load_trimesh,
+    load_trimesh_to_obj,
+    load_obj_with_vtk,
 )
-from car_quality_estimator.car_quality_metric import load_car_quality_score
-
-from torch.utils.data import Dataset, DataLoader
-from torchvision import transforms
-from torchmetrics.image.fid import FrechetInceptionDistance
-from torchmetrics.image.kid import KernelInceptionDistance
-from torchmetrics.image.inception import InceptionScore
+import vtk
+import trimesh
 
 
-class Metrics_3D:
+class MeshMetrics3D:
     """
-    Compute a configurable subset of semantic + distribution metrics.
-
-    Note on Distribution Metrics:
-      - For complex metrics like FID, IS, and KID, we recommend processing input batches of at least 1000 samples.
-      - Please verify performance on large input batches, especially for high-dimensional data.
-      - Adjust the expected batch size based on available system memory and GPU constraints.
+    Compute a configurable subset of 3D mesh metrics using MeshMetrics' DistanceMetrics.
     """
 
     def __init__(
         self,
-        device: Optional[str] = "cuda",
-        clip_model_path: str = "openai/clip-vit-large-patch14",
-        clip_cache_dir: Optional[str] = None,
-        compute_distribution_metrics: bool = True,
-        metric_list: Optional[List[str]] = None,
-        distribution_list: Optional[List[str]] = None,
+        metric_list=None,
+        spacing=(1.0, 1.0, 1.0),
+        nsd_tau=1.0,
+        biou_tau=1.0,
+        hd_percentile=95.0,
     ):
-        from torchmetrics.functional.image import (
-            peak_signal_noise_ratio,  # PSNR
-            learned_perceptual_image_patch_similarity,  # LPIPS
-            structural_similarity_index_measure,  # SSIM
-            spectral_distortion_index,  # D_lambda
-            error_relative_global_dimensionless_synthesis,  # ERGAS
-            relative_average_spectral_error,  # RASE
-            root_mean_squared_error_using_sliding_window,  # RMSE_wind
-            spectral_angle_mapper,  # SAM
-            multiscale_structural_similarity_index_measure,  # MS-SSIM
-            universal_image_quality_index,  # UQI
-            visual_information_fidelity,  # VIF
-            spatial_correlation_coefficient,  # SCC
-        )
-        from torchmetrics.image.fid import FrechetInceptionDistance
-        from torchmetrics.image.inception import InceptionScore
-        from torchmetrics.image.kid import KernelInceptionDistance
-        from transformers import CLIPImageProcessor, CLIPModel
-
-        self.device = device
-        self.compute_distribution_metrics = compute_distribution_metrics
-
-        self._all_metrics = {
-            "MSE": lambda inp, tgt: F.mse_loss(
-                inp.to(torch.float32), tgt.to(torch.float32)
-            ).to(inp.dtype),
-            "CLIP-S": self._make_clip_score_fn(clip_model_path, clip_cache_dir),
-            "Spectral_MSE": self._make_spectral_mse(),
-            "D_lambda": spectral_distortion_index,
-            "ERGAS": error_relative_global_dimensionless_synthesis,
-            "PSNR": peak_signal_noise_ratio,
-            "RASE": relative_average_spectral_error,
-            "RMSE_wind": root_mean_squared_error_using_sliding_window,
-            "SAM": spectral_angle_mapper,
-            "MS-SSIM": multiscale_structural_similarity_index_measure,
-            "SSIM": structural_similarity_index_measure,
-            "UQI": universal_image_quality_index,
-            "VIF": visual_information_fidelity,
-            "LPIPS": learned_perceptual_image_patch_similarity,
-            "SCC": spatial_correlation_coefficient,
+        # Default to all MeshMetrics metrics if not specified
+        self.metric_list = metric_list or [
+            "Hausdorff",
+            "Hausdorff_Percentile",
+            "MASD",
+            "ASSD",
+            "NSD",
+            "BIoU",
+        ]
+        self.spacing = spacing
+        self.nsd_tau = nsd_tau
+        self.biou_tau = biou_tau
+        self.hd_percentile = hd_percentile
+        self.available_metrics = {
+            "Hausdorff": self._hausdorff,
+            "Hausdorff_Percentile": self._hausdorff_percentile,
+            "MASD": self._masd,
+            "ASSD": self._assd,
+            "NSD": self._nsd,
+            "BIoU": self._biou,
         }
 
-        if metric_list is not None:
-            self.metrics = {
-                k: v for k, v in self._all_metrics.items() if k in metric_list
-            }
-        else:
-            self.metrics = dict(self._all_metrics)
+    def _prepare(self, pred_mesh_path: str, gt_mesh_path: str):
+        """
+        Load and convert meshes to vtkPolyData for distance metrics computation.
+        Args:
+            pred_mesh_path (str): Path to the predicted mesh file.
+            gt_mesh_path (str): Path to the ground truth mesh file.
+        Returns:
+            tuple: A tuple containing the ground truth and predicted meshes as vtkPolyData.
+        """
+        pred = safe_load_trimesh(pred_mesh_path)
+        gt = safe_load_trimesh(gt_mesh_path)
+        pred_vtk = trimesh_to_vtk(pred)
+        gt_vtk = trimesh_to_vtk(gt)
+        # pred_obj_path = load_trimesh_to_obj(pred_mesh_path)
+        # gt_obj_path = load_trimesh_to_obj(gt_mesh_path)
+        # pred_vtk = load_obj_with_vtk(pred_obj_path)
+        # gt_vtk = load_obj_with_vtk(gt_obj_path)
+        return gt_vtk, pred_vtk
 
-        self._all_distributions = {
-            "FID": self._FID_score,
-            "IS": self._IS_score,
-            "KID": self._KID_score,
-        }
-        if compute_distribution_metrics:
-            self.fid_metric = FrechetInceptionDistance(feature=64, normalize=True).to(
-                device
-            )
-            self.is_metric = InceptionScore(normalize=True).to(device)
-            self.kid_metric = KernelInceptionDistance(
-                subset_size=21, normalize=True
-            ).to(device)
-
-            if distribution_list is not None:
-                self.distribution_metrics = {
-                    k: self._all_distributions[k]
-                    for k in distribution_list
-                    if k in self._all_distributions
-                }
-            else:
-                self.distribution_metrics = dict(self._all_distributions)
-        else:
-            self.distribution_metrics = {}
-
-        print(f"[Metrics] will compute: {list(self.metrics.keys())}")
-        if self.compute_distribution_metrics:
-            print(
-                f"[Metrics] will compute distributions: {list(self.distribution_metrics.keys())}"
-            )
-
-        self.result = torch.zeros(len(self.metrics), device=device)
-        self.result_distribution = (
-            torch.zeros(len(self.distribution_metrics), device=device)
-            if compute_distribution_metrics
-            else None
-        )
-        self.total = 0
-
-        self._clip_proc = CLIPImageProcessor.from_pretrained(
-            clip_model_path,
-            cache_dir=(clip_cache_dir or os.path.expanduser("~/.cache/clip")),
-        )
-        self._clip_model = CLIPModel.from_pretrained(
-            clip_model_path,
-            cache_dir=(clip_cache_dir or os.path.expanduser("~/.cache/clip")),
-        ).to(device)
-
-    def _make_clip_score_fn(self, clip_model_path, clip_cache_dir):
-        def _CLIP_score(input, target):
-            if input.shape[1] == 4:
-                input = input[:, :3]
-                target = target[:, :3]
-            inp = self._clip_proc(input * 0.5 + 0.5, return_tensors="pt")[
-                "pixel_values"
-            ]
-            tgt = self._clip_proc(target * 0.5 + 0.5, return_tensors="pt")[
-                "pixel_values"
-            ]
-            with torch.no_grad():
-                emb_i = self._clip_model.get_image_features(inp.to(self.device))
-                emb_t = self._clip_model.get_image_features(tgt.to(self.device))
-                sim = F.cosine_similarity(emb_i, emb_t).mean().item()
-            torch.cuda.empty_cache()
-            return sim
-
-        return _CLIP_score
-
-    def _make_spectral_mse(self):
-        def spectral_mse(input, target):
-            dtype = input.dtype
-            f1 = torch.fft.fft2(input.to(torch.float32))
-            f2 = torch.fft.fft2(target.to(torch.float32))
-            return ((f1.abs() - f2.abs()) ** 2).mean().to(dtype)
-
-        return spectral_mse
-
-    def _FID_score(self, input=None, target=None):
-        if input is None:
-            return self.fid_metric.compute()
-        self.fid_metric.update(target.to(self.device), real=True)
-        self.fid_metric.update(input.to(self.device), real=False)
-        return self.fid_metric.compute()
-
-    def _IS_score(self, input=None, target=None):
-        if input is None:
-            return self.is_metric.compute()[0]
-        self.is_metric.update(input.to(self.device))
-        return self.is_metric.compute()[0]
-
-    def _KID_score(self, input=None, target=None):
-        if input is None:
-            return self.kid_metric.compute()[0]
-        self.kid_metric.update(target.to(self.device), real=True)
-        self.kid_metric.update(input.to(self.device), real=False)
-        return self.kid_metric.compute()[0]
-
-    def compute_image(self, input: torch.Tensor, target: torch.Tensor):
-        assert input.shape == target.shape
-        input = input.to(self.device) * 2 - 1
-        target = target.to(self.device) * 2 - 1
-
-        agg = torch.zeros(len(self.metrics), device=self.device)
-        for i in range(input.shape[0]):
-            vals = [
-                fn(input[i : i + 1], target[i : i + 1]) for fn in self.metrics.values()
-            ]
-            agg += torch.tensor(vals, device=self.device)
-
-        if self.compute_distribution_metrics:
-            dist_vals = [fn(input, target) for fn in self.distribution_metrics.values()]
-            self.result_distribution += torch.tensor(dist_vals, device=self.device)
-
-        self.result += agg / input.shape[0]
-        self.total += 1
-
-        out = dict(zip(self.metrics.keys(), (self.result / self.total).tolist()))
-        if self.compute_distribution_metrics:
-            out.update(
-                dict(
-                    zip(
-                        self.distribution_metrics.keys(),
-                        (self.result_distribution / self.total).tolist(),
+    def compute_mesh_pair(self, pred_mesh_path: str, gt_mesh_path: str):
+        """
+        Compute metrics for a pair of meshes (predicted and ground truth).
+        Args:
+            pred_mesh_path (str): Path to the predicted mesh file.
+            gt_mesh_path (str): Path to the ground truth mesh file.
+        Returns:
+            dict: A dictionary containing the computed metrics.
+        """
+        gt, pred = self._prepare(pred_mesh_path, gt_mesh_path)
+        dm = DistanceMetrics()
+        dm.set_input(gt, pred, spacing=self.spacing)
+        results = {}
+        for name in self.metric_list:
+            if name in self.available_metrics:
+                try:
+                    if name == "Hausdorff_Percentile":
+                        results[name] = self.available_metrics[name](
+                            dm, percentile=self.hd_percentile
+                        )
+                    else:
+                        results[name] = self.available_metrics[name](dm)
+                except Exception as e:
+                    results[name] = None
+                    print(
+                        f"[MeshMetrics3D] Error computing {name} for {pred_mesh_path}: {e}"
                     )
-                )
-            )
-        return out
+        return results
+
+    # MeshMetrics3D methods for each metric
+    def _hausdorff(self, dm: DistanceMetrics) -> float:
+        """
+        Hausdorff Distance (MeshMetrics)
+        - Measures the largest geometric error between two surfaces.
+        - For every point on Mesh A, finds the nearest point on Mesh B (and vice versa).
+        - The symmetric Hausdorff is the single largest gap anywhere between the two surfaces.
+        - Useful for detecting the largest geometric error anywhere on the model.
+        - Does not indicate the location of the error, only its size.
+
+        Returns:
+            float: the maximum Hausdorff distance/ deviation between the two meshes.
+        """
+        return dm.hd(percentile=100.0)
+
+    def _hausdorff_percentile(
+        self, dm: DistanceMetrics, percentile: float = 95.0
+    ) -> float:
+        """
+        Percentile Hausdorff Distance (e.g., HD_95)
+        - Same as Hausdorff, but returns the distance at a given percentile (e.g., 95th).
+        - Reduces sensitivity to outliers or tiny spikes.
+
+        Returns:
+            float: the Hausdorff distance at the specified percentile.
+        """
+        return dm.hd(percentile=percentile)
+
+    def _masd(self, dm: DistanceMetrics) -> float:
+        """
+        Mean Average Surface Distance (MASD, MeshMetrics)
+        - Computes two one-way average distances:
+            1. From every point on the reference surface to its nearest point on the test.
+            2. From every point on the test surface to its nearest point on the reference.
+        - Represents the average surface deviation across the entire mesh.
+        - Gives equal weight to each direction, regardless of vertex count.
+        - MASD and ASSD are equal if vertex counts are the same.
+
+        Returns:
+            float: the mean average surface distance between the two meshes.
+        """
+        return dm.masd()
+
+    def _assd(self, dm: DistanceMetrics) -> float:
+        """
+        Average Symmetric Surface Distance (ASSD, MeshMetrics)
+        - Pools all one-way point-to-surface distances (both directions) into a single set, then computes the mean.
+        - Weights each individual sample point equally (proportional to vertex count).
+        - Useful for detecting widespread surface deviations.
+        - MASD and ASSD are equal if vertex counts are the same.
+
+        Returns:
+            float: the average symmetric surface distance between the two meshes.
+        """
+        return dm.assd()
+
+    def _nsd(self, dm: DistanceMetrics) -> float:
+        """
+        Normalized Surface Dice (NSD, MeshMetrics)
+        - Boundary-overlap (surface-Dice) metric.
+        - Evaluates what fraction of the surfaces lies under a tolerance τ of the other mesh’s surface.
+        - Counts how many distances fall below tolerance τ from each side, returns percentage within τ.
+        - Useful for verifying how many gaps between test and reference are below τ (e.g., 3mm), as a percentage.
+        - τ has to be specified in the scale of the mesh (e.g., 1.0 for 1mm).
+
+        Returns:
+            float: the normalized surface Dice score between the two meshes.
+        """
+        return dm.nsd(tau=self.nsd_tau)
+
+    def _biou(self, dm: DistanceMetrics) -> float:
+        """
+        Boundary IoU (BIoU, MeshMetrics)
+        - Boundary-overlap (Intersection-over-Union) metric.
+        - Quantifies how well the boundary regions of two meshes overlap within tolerance τ.
+        - Similar to NSD but stricter: counts intersection once, divides by union of both bands.
+        - Penalizes extra points in either band more heavily.
+        - Ideal when any extra or missing boundary points beyond τ should meaningfully lower your score.
+        - τ has to be specified in the scale of the mesh (e.g., 1.0 for 1mm).
+
+        Returns:
+            float: the boundary IoU score between the two meshes.
+        """
+        return dm.biou(tau=self.biou_tau)
 
 
-class GeometryMetrics:
+def process_mesh_folder(gt_folder: str, pred_folder: str, metric_class) -> dict:
     """
-    Compute a configurable subset of geometric metrics.
-    """
-
-    def __init__(self, num_points: int = 100, metric_list: Optional[List[str]] = None):
-        self.num_points = num_points
-        self.metric_list = metric_list
-        print(f"[GeometryMetrics] metric_list = {self.metric_list}")
-
-        self.reset()
-
-    def reset(self):
-        self.area_diffs = []
-        self.bbox_metrics = []
-        self.outline_diffs = []
-        self.outline_sq = []
-        self.summed_diffs = []
-        self.summed_sq = []
-        self.total = 0
-
-    def compute_image_pair(self, img1: Image.Image, img2: Image.Image):
-        res = {}
-        if self.metric_list is None or "Rel_Pixel_Area_Diff" in self.metric_list:
-            a = compare_px_area(img1, img2)["relative_difference"]
-            self.area_diffs.append(a)
-            res["Rel_Pixel_Area_Diff"] = a
-
-        if self.metric_list is None or "Rel_BB_Aspect_Ratio_Diff" in self.metric_list:
-            bb = compare_bounding_boxes(img1, img2)["aspect_percent"]
-            self.bbox_metrics.append(bb)
-            res["Rel_BB_Aspect_Ratio_Diff"] = bb
-
-        o = compare_outline_normals(img1, img2, num_points=self.num_points)
-        if self.metric_list is None or "Outline_Normals_Angle_Diff" in self.metric_list:
-            od = o["average_angle_difference_degrees"]
-            self.outline_diffs.append(od)
-            res["Outline_Normals_Angle_Diff"] = od
-        if (
-            self.metric_list is None
-            or "Squared_Outline_Normals_Angle_Diff" in self.metric_list
-        ):
-            osq = o["average_angle_difference_squared_degrees"]
-            self.outline_sq.append(osq)
-            res["Squared_Outline_Normals_Angle_Diff"] = osq
-
-        so = compare_summed_outline_normals(img1, img2, num_points=self.num_points)
-        if (
-            self.metric_list is None
-            or "Summed_Outline_Normals_Angle_Diff" in self.metric_list
-        ):
-            sd = so["average_summed_angle_difference_degrees"]
-            self.summed_diffs.append(sd)
-            res["Summed_Outline_Normals_Angle_Diff"] = sd
-        if (
-            self.metric_list is None
-            or "Squared_Summed_Outline_Normals_Angle_Diff" in self.metric_list
-        ):
-            ssq = so["average_summed_angle_difference_squared_degrees"]
-            self.summed_sq.append(ssq)
-            res["Squared_Summed_Outline_Normals_Angle_Diff"] = ssq
-
-        self.total += 1
-        return res
-
-    def get_average_metrics(self):
-        out = {}
-        if self.metric_list is None or "Rel_Pixel_Area_Diff" in self.metric_list:
-            out["Rel_Pixel_Area_Diff"] = (
-                float(np.mean(self.area_diffs)) if self.area_diffs else None
-            )
-        if self.metric_list is None or "Rel_BB_Aspect_Ratio_Diff" in self.metric_list:
-            out["Rel_BB_Aspect_Ratio_Diff"] = (
-                float(np.mean(self.bbox_metrics)) if self.bbox_metrics else None
-            )
-        if self.metric_list is None or "Outline_Normals_Angle_Diff" in self.metric_list:
-            out["Outline_Normals_Angle_Diff"] = (
-                float(np.mean(self.outline_diffs)) if self.outline_diffs else None
-            )
-        if (
-            self.metric_list is None
-            or "Squared_Outline_Normals_Angle_Diff" in self.metric_list
-        ):
-            out["Squared_Outline_Normals_Angle_Diff"] = (
-                float(np.mean(self.outline_sq)) if self.outline_sq else None
-            )
-        if (
-            self.metric_list is None
-            or "Summed_Outline_Normals_Angle_Diff" in self.metric_list
-        ):
-            out["Summed_Outline_Normals_Angle_Diff"] = (
-                float(np.mean(self.summed_diffs)) if self.summed_diffs else None
-            )
-        if (
-            self.metric_list is None
-            or "Squared_Summed_Outline_Normals_Angle_Diff" in self.metric_list
-        ):
-            out["Squared_Summed_Outline_Normals_Angle_Diff"] = (
-                float(np.mean(self.summed_sq)) if self.summed_sq else None
-            )
-        out["Image_Pairs"] = self.total
-        return out
-
-
-class CarQualityMetrics:
-    """
-    Wraps no-reference CarQualityScore and filters to requested sub-metrics.
-    """
-
-    def __init__(
-        self,
-        use_combined_embedding_model: bool = True,
-        device: Optional[str] = None,
-        batch_size: int = 32,
-        metrics_list: Optional[List[str]] = None,
-    ):
-        self.metric = load_car_quality_score(
-            device=device,
-            use_combined_embedding_model=use_combined_embedding_model,
-            batch_size=batch_size,
-        )
-        self.metrics_list = metrics_list
-        print(f"[CarQualityMetrics] metrics_list = {self.metrics_list}")
-
-    def compute_folder_metrics(self, folder: str) -> dict:
-        paths = sorted(glob.glob(os.path.join(folder, "*.png")))
-        if not paths:
-            raise ValueError(f"No PNG images found in {folder!r}")
-        imgs = [Image.open(p).convert("RGB") for p in paths]
-        raw = self.metric.compute_scores_no_reference(imgs)
-
-        cleaned = {}
-        for k, v in raw.items():
-            cleaned[k] = int(v) if k == "num_samples" else float(np.array(v))
-
-        if self.metrics_list is not None:
-            cleaned = {k: cleaned[k] for k in cleaned if k in self.metrics_list}
-        return cleaned
-
-
-class GlobalImagePairDataset(Dataset):
-    def __init__(self, gt_root, gen_root, transform=None):
-        super().__init__()
-        self.transform = transform or transforms.ToTensor()
-        self.pairs = []
-        for obj in sorted(os.listdir(gt_root)):
-            gt_dir = os.path.join(gt_root, obj)
-            gen_dir = os.path.join(gen_root, obj)
-            if not os.path.isdir(gt_dir) or not os.path.isdir(gen_dir):
-                continue
-            for fn in sorted(os.listdir(gt_dir)):
-                if fn.lower().endswith(".png"):
-                    gt_path = os.path.join(gt_dir, fn)
-                    gen_path = os.path.join(gen_dir, fn)
-                    if os.path.exists(gen_path):
-                        self.pairs.append((gt_path, gen_path))
-
-    def __len__(self):
-        return len(self.pairs)
-
-    def __getitem__(self, idx):
-        gt_path, gen_path = self.pairs[idx]
-        gt = Image.open(gt_path).convert("RGB")
-        gn = Image.open(gen_path).convert("RGB")
-        return self.transform(gt), self.transform(gn)
-
-
-def compute_global_distribution_metrics(
-    gt_root: str,
-    gen_root: str,
-    distribution_list: Optional[List[str]] = None,
-    device: str = "cuda",
-    batch_size: int = 128,
-    num_workers: int = 4,
-    compute_on_cpu: bool = False,
-) -> dict:
-    """
-    Batched FID/IS/KID over ALL matching pairs under gt_root/gen_root.
-    """
-    ds = GlobalImagePairDataset(gt_root, gen_root, transform=transforms.ToTensor())
-    loader = DataLoader(
-        ds,
-        batch_size=batch_size,
-        shuffle=False,
-        num_workers=num_workers,
-        pin_memory=(not compute_on_cpu),
-    )
-
-    dev_metrics = "cpu" if compute_on_cpu else device
-
-    objs = {}
-    if distribution_list is None or "FID" in distribution_list:
-        objs["FID"] = FrechetInceptionDistance(
-            feature=64, normalize=True, compute_on_cpu=compute_on_cpu
-        ).to(dev_metrics)
-    if distribution_list is None or "KID" in distribution_list:
-        objs["KID"] = KernelInceptionDistance(
-            subset_size=21, normalize=True, compute_on_cpu=compute_on_cpu
-        ).to(dev_metrics)
-    if distribution_list is None or "IS" in distribution_list:
-        objs["IS"] = InceptionScore(normalize=True, compute_on_cpu=compute_on_cpu).to(
-            dev_metrics
-        )
-
-    for gt_batch, gen_batch in loader:
-        if not compute_on_cpu:
-            gt_batch = gt_batch.to(device)
-            gen_batch = gen_batch.to(device)
-        for name, m in objs.items():
-            if name == "FID":
-                m.update(gt_batch, real=True)
-                m.update(gen_batch, real=False)
-            elif name == "KID":
-                m.update(gt_batch, real=True)
-                m.update(gen_batch, real=False)
-            else:  # IS
-                m.update(gen_batch)
-
-    out = {}
-    if "FID" in objs:
-        out["FID"] = objs["FID"].compute().item()
-    if "KID" in objs:
-        out["KID"] = objs["KID"].compute()[0].item()
-    if "IS" in objs:
-        out["IS"] = objs["IS"].compute()[0].item()
-
-    return out
-
-
-class ImageBasedPromptEvaluator:
-    """
-    A class to evaluate image-based prompts using CLIP and ImageReward.
-    Uses ImageReward from: https://github.com/THUDM/ImageReward
+    Process a folder of meshes, computing metrics for each pair of ground truth and predicted meshes.
+    Currently supports .obj and .glb files.
     Args:
-        model_name_or_path (str): Path to the CLIP model or model name from Hugging Face Hub.
+        gt_folder (str): Path to the folder containing ground truth meshes.
+        pred_folder (str): Path to the folder containing predicted meshes.
+        metric_class: An instance of MeshMetrics3D or similar class for computing metrics.
+    Returns:
+        dict: A dictionary mapping mesh filenames to their computed metrics.
     """
-
-    def __init__(self, model_name_or_path="openai/clip-vit-base-patch16"):
-        """
-        Initialize the evaluator with a CLIP model and ImageReward model.
-        Args:
-            model_name_or_path (str): Path to the CLIP model or model name from Hugging Face Hub.
-        """
-        from torchmetrics.functional.multimodal import clip_score
-        import ImageReward as RM
-
-        self.model_name_or_path = model_name_or_path
-        self.clip_score_fn = partial(
-            clip_score, model_name_or_path=self.model_name_or_path
-        )
-        self.reward_model = RM.load("ImageReward-v1.0")
-
-    def calculate_clip_score_PIL(self, images, prompts):
-        """
-        Calculate the CLIP score for a batch of images and a batch of prompts.
-        Args:
-            images (list): List of PIL.Image images to evaluate.
-            prompts (list): List of prompts corresponding to the images. Has to be the same length as images.
-        Returns:
-            float: The average CLIP score for the batch.
-        """
-        np_images = np.array(images, dtype=np.uint8)
-        image_tensor = torch.from_numpy(np_images).permute(0, 3, 1, 2)
-        return self.calculate_clip_score(image_tensor, prompts)
-
-    def calculate_clip_score(self, image_tensor, prompts):
-        """
-        Calculate the CLIP score for a batch of images and a batch of prompts.
-        Args:
-            image_tensor (torch.Tensor): Tensor of images to evaluate.
-            prompts (list): List of prompts corresponding to the images.
-        Returns:
-            float: The average CLIP score for the batch.
-        """
-        with torch.no_grad():
-            prompt_clip_score = self.clip_score_fn(image_tensor, prompts).detach()
-        return round(float(prompt_clip_score), 4)
-
-    def calculate_reward(self, images, prompt):
-        """
-        Calculate the reward for a batch of images and single prompt using the ImageReward model.
-        Args:
-            images (list, PIL.Image): List of PIL.Image images to evaluate or a single image.
-            prompts (str): Single prompt corresponding to the images.
-        Returns:
-            torch.Tensor: The average reward for the batch.
-        """
-        with torch.no_grad():
-            rewards = self.reward_model.score(prompt, images)
-            # Convert to numpy array
-            rewards = np.array(rewards)
-            # mean over the batch
-            rewards = np.mean(rewards)
-        return round(float(rewards), 4)
-
-    def evaluate(self, images, prompts):
-        """
-        Evaluate a batch of images using CLIP and ImageReward.
-        It expects a batch of images and a batch of prompts with the same length.
-        Args:
-            images (list): List of PIL.Image images to evaluate.
-            prompts (list): List of prompts corresponding to the images. Has to be the same length as images.
-        Returns:
-            dict: Dictionary containing the CLIP score and ImageReward score.
-        """
-        clip_score = self.calculate_clip_score_PIL(images, prompts)
-        rewards = []
-        for prompt in prompts:
-            reward = self.calculate_reward(images, prompt)
-            rewards.append(reward)
-        reward = np.mean(rewards)
-        reward = round(float(reward), 4)
-        return {"clip_score": clip_score, "image_reward": reward}
-
-    def evaluate_one_prompt_n_images(self, images, prompt):
-        """
-        Evaluate a batch of images using CLIP and ImageReward.
-        It expects a batch of images and a single prompt since it is used for renders of a 3D model.
-        Args:
-            images (list): List of PIL.Image images to evaluate.
-            prompts (str): Single prompt corresponding to the images.
-        Returns:
-            dict: Dictionary containing the CLIP score and ImageReward score.
-        """
-        prompts = [prompt] * len(images)
-        clip_score = self.calculate_clip_score_PIL(images, prompts)
-        reward = self.calculate_reward(images, prompt)
-        return {"clip_score": clip_score, "image_reward": reward}
+    results = {}
+    for file in os.listdir(gt_folder):
+        if file.endswith(".obj") or file.endswith(".glb"):
+            gt_path = os.path.join(gt_folder, file)
+            pred_path = os.path.join(pred_folder, file)
+            if os.path.exists(pred_path):
+                gt_mesh = safe_load_trimesh(gt_path)
+                if not (gt_mesh.is_watertight and gt_mesh.is_winding_consistent):
+                    print(
+                        f"Skipping {file}: not a closed/manifold mesh. Watertight={gt_mesh.is_watertight}, Winding Consistent={gt_mesh.is_winding_consistent}"
+                    )
+                    continue
+                # gt_mesh = load_trimesh_to_obj(gt_path)
+                # gt_trimesh = trimesh.load_mesh(gt_mesh)
+                # if (
+                #     not gt_trimesh.is_watertight
+                #     and not gt_trimesh.is_winding_consistent
+                # ):
+                #     print(f"Skipping {file}: not a watertight mesh.")
+                #     continue
+                try:
+                    print("Computing metrics for:", file)
+                    results[file] = metric_class.compute_mesh_pair(pred_path, gt_path)
+                    print("Successfully computed metrics for:", file)
+                except AssertionError as e:
+                    print(f"Skipping {file}: {e}")
+    return results

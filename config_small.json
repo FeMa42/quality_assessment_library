@@ -1,47 +1,67 @@
 {
-    "semantic": {
-      "enabled": true,
-      "metrics": [
-        "MSE",
-        "CLIP-S"
-      ]
-    },
-    "distribution": {
-      "enabled": false,
-      "metrics": [
-        "FID",
-        "KID",
-        "IS"
-      ]
-    },
-    "geometric": {
-      "enabled": false,
-      "metrics": [
-        "Rel_BB_Aspect_Ratio_Diff",
-        "Rel_Pixel_Area_Diff",
-        "Squared_Outline_Normals_Angle_Diff",
-        "Squared_Summed_Outline_Normals_Angle_Diff"
-      ]
-    },
-    "car_quality": {
-      "enabled": false,
-      "metrics": [
-        "gen_avg_quality_score",
-        "gen_avg_entropy",
-        "gen_avg_combined_score",
-        "gen_quality_std"
-      ]
-    },
-    "global_distribution": {
-      "enabled": true,
-      "metrics": [
-        "FID",
-        "KID",
-        "IS"
-      ],
-      "global": true,
-      "batch_size": 64,
-      "num_workers": 2,
-      "compute_on_cpu": false
+  "semantic": {
+    "enabled": true,
+    "metrics": [
+      "MSE",
+      "CLIP-S"
+    ]
+  },
+  "distribution": {
+    "enabled": false,
+    "metrics": [
+      "FID",
+      "KID",
+      "IS"
+    ]
+  },
+  "geometric": {
+    "enabled": false,
+    "metrics": [
+      "Rel_BB_Aspect_Ratio_Diff",
+      "Rel_Pixel_Area_Diff",
+      "Squared_Outline_Normals_Angle_Diff",
+      "Squared_Summed_Outline_Normals_Angle_Diff"
+    ]
+  },
+  "car_quality": {
+    "enabled": false,
+    "metrics": [
+      "gen_avg_quality_score",
+      "gen_avg_entropy",
+      "gen_avg_combined_score",
+      "gen_quality_std"
+    ]
+  },
+  "global_distribution": {
+    "enabled": true,
+    "metrics": [
+      "FID",
+      "KID",
+      "IS"
+    ],
+    "global": true,
+    "batch_size": 64,
+    "num_workers": 2,
+    "compute_on_cpu": false
+  },
+  "metrics_3d": {
+    "enabled": true,
+    "metrics": [
+      "Hausdorff",
+      "Hausdorff_Percentile",
+      "MASD",
+      "ASSD",
+      "NSD",
+      "BIoU",
+      "MMPCQA"
+    ],
+    "spacing": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "nsd_tau": 1.0,
+    "biou_tau": 1.0,
+    "Hausdorff_Percentile": 95
   }
-  }
+}
