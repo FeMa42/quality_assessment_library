@@ -3,11 +3,8 @@ from MeshMetrics.metrics import DistanceMetrics
 from metrics_3d.helpers import (
     trimesh_to_vtk,
     safe_load_trimesh,
-    load_trimesh_to_obj,
-    load_obj_with_vtk,
 )
-import vtk
-import trimesh
+from tqdm.auto import tqdm
 
 
 class MeshMetrics3D:
@@ -45,7 +42,9 @@ class MeshMetrics3D:
             "BIoU": self._biou,
         }
 
-    def _prepare(self, pred_mesh_path: str, gt_mesh_path: str):
+    def _prepare(
+        self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
+    ) -> tuple:
         """
         Load and convert meshes to vtkPolyData for distance metrics computation.
         Args:
@@ -54,26 +53,51 @@ class MeshMetrics3D:
         Returns:
             tuple: A tuple containing the ground truth and predicted meshes as vtkPolyData.
         """
-        pred = safe_load_trimesh(pred_mesh_path)
-        gt = safe_load_trimesh(gt_mesh_path)
+        pred = safe_load_trimesh(pred_mesh_path, logging=logging)
+        if not pred.is_watertight:
+            if logging:
+                print(
+                    f"\t [Warning] {pred_mesh_path}: Not watertight after trying to repair -> No Comparison possible."
+                )
+            return None, None, False  # Skip non-watertight meshes
+        gt = safe_load_trimesh(gt_mesh_path, logging=logging)
+        if not gt.is_watertight:
+            if logging:
+                print(
+                    f"\t [Warning] {gt_mesh_path}: Not watertight after trying to repair -> No Comparison possible."
+                )
+            return None, None, False  # Skip non-watertight meshes
+
+        # Convert to vtkPolyData for distance metrics
         pred_vtk = trimesh_to_vtk(pred)
         gt_vtk = trimesh_to_vtk(gt)
-        # pred_obj_path = load_trimesh_to_obj(pred_mesh_path)
-        # gt_obj_path = load_trimesh_to_obj(gt_mesh_path)
-        # pred_vtk = load_obj_with_vtk(pred_obj_path)
-        # gt_vtk = load_obj_with_vtk(gt_obj_path)
-        return gt_vtk, pred_vtk
+        return gt_vtk, pred_vtk, True
 
-    def compute_mesh_pair(self, pred_mesh_path: str, gt_mesh_path: str):
+    def compute_mesh_pair(
+        self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
+    ) -> tuple:
         """
         Compute metrics for a pair of meshes (predicted and ground truth).
         Args:
             pred_mesh_path (str): Path to the predicted mesh file.
             gt_mesh_path (str): Path to the ground truth mesh file.
         Returns:
-            dict: A dictionary containing the computed metrics.
+            tuple: A tuple containing a dictionary with the computed metrics and if the metric caluclation was successful.
         """
-        gt, pred = self._prepare(pred_mesh_path, gt_mesh_path)
+        success = True
+        gt, pred, watertight = self._prepare(
+            pred_mesh_path, gt_mesh_path, logging=logging
+        )
+        if not watertight:
+            success = False
+            return {
+                "Hausdorff": None,
+                "Hausdorff_Percentile": None,
+                "MASD": None,
+                "ASSD": None,
+                "NSD": None,
+                "BIoU": None,
+            }, success
         dm = DistanceMetrics()
         dm.set_input(gt, pred, spacing=self.spacing)
         results = {}
@@ -88,10 +112,12 @@ class MeshMetrics3D:
                         results[name] = self.available_metrics[name](dm)
                 except Exception as e:
                     results[name] = None
-                    print(
-                        f"[MeshMetrics3D] Error computing {name} for {pred_mesh_path}: {e}"
-                    )
-        return results
+                    if logging:
+                        print(
+                            f"[MeshMetrics3D] Error computing {name} for {pred_mesh_path}: {e}"
+                        )
+                    success = False
+        return results, success
 
     # MeshMetrics3D methods for each metric
     def _hausdorff(self, dm: DistanceMetrics) -> float:
@@ -179,41 +205,41 @@ class MeshMetrics3D:
         return dm.biou(tau=self.biou_tau)
 
 
-def process_mesh_folder(gt_folder: str, pred_folder: str, metric_class) -> dict:
+def process_mesh_folder(
+    gt_folder: str, pred_folder: str, metric_class: MeshMetrics3D, logging=True
+) -> dict:
     """
     Process a folder of meshes, computing metrics for each pair of ground truth and predicted meshes.
-    Currently supports .obj and .glb files.
+    Currently supports obj/glb/ply/stl files.
     Args:
         gt_folder (str): Path to the folder containing ground truth meshes.
         pred_folder (str): Path to the folder containing predicted meshes.
-        metric_class: An instance of MeshMetrics3D or similar class for computing metrics.
+        metric_class: An instance of MeshMetrics3D for computing metrics.
     Returns:
         dict: A dictionary mapping mesh filenames to their computed metrics.
     """
     results = {}
-    for file in os.listdir(gt_folder):
-        if file.endswith(".obj") or file.endswith(".glb"):
-            gt_path = os.path.join(gt_folder, file)
-            pred_path = os.path.join(pred_folder, file)
-            if os.path.exists(pred_path):
-                gt_mesh = safe_load_trimesh(gt_path)
-                if not (gt_mesh.is_watertight and gt_mesh.is_winding_consistent):
-                    print(
-                        f"Skipping {file}: not a closed/manifold mesh. Watertight={gt_mesh.is_watertight}, Winding Consistent={gt_mesh.is_winding_consistent}"
-                    )
-                    continue
-                # gt_mesh = load_trimesh_to_obj(gt_path)
-                # gt_trimesh = trimesh.load_mesh(gt_mesh)
-                # if (
-                #     not gt_trimesh.is_watertight
-                #     and not gt_trimesh.is_winding_consistent
-                # ):
-                #     print(f"Skipping {file}: not a watertight mesh.")
-                #     continue
-                try:
-                    print("Computing metrics for:", file)
-                    results[file] = metric_class.compute_mesh_pair(pred_path, gt_path)
-                    print("Successfully computed metrics for:", file)
-                except AssertionError as e:
-                    print(f"Skipping {file}: {e}")
+    mesh_files = [
+        file
+        for file in os.listdir(gt_folder)
+        if file.endswith(".obj")
+        or file.endswith(".glb")
+        or file.endswith(".ply")
+        or file.endswith(".stl")
+    ]
+    for file in tqdm(mesh_files, desc="Processing meshes", unit="file"):
+        gt_path = os.path.join(gt_folder, file)
+        pred_path = os.path.join(pred_folder, file)
+        if os.path.exists(pred_path):
+            try:
+                if logging:
+                    tqdm.write(f"Computing metrics for: {file}")
+                results[file], success = metric_class.compute_mesh_pair(
+                    pred_path, gt_path, logging=logging
+                )
+                if logging:
+                    tqdm.write(f"\t Metrics computation success: {success} for: {file}")
+            except AssertionError as e:
+                if logging:
+                    tqdm.write(f"\t Assertion error for {file}: {e}")
     return results

@@ -6,6 +6,7 @@ def process_3d_metrics(
     ground_truth_folder: str,
     generated_folder: str,
     config_path: str,
+    logging: bool = True,
 ):
     # Load config
     cfg = {}
@@ -35,7 +36,7 @@ def process_3d_metrics(
 
     # Compute metrics for all mesh pairs
     results_per_object = process_mesh_folder(
-        ground_truth_folder, generated_folder, mesh_metrics_3d
+        ground_truth_folder, generated_folder, mesh_metrics_3d, logging=logging
     )
 
     # Aggregate (average) results
