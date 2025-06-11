@@ -7,14 +7,6 @@
       "ASSD": 1.0964651504117141e-15,
       "NSD": 1.0,
       "BIoU": 1.0
-    },
-    "mesh.glb": {
-      "Hausdorff": null,
-      "Hausdorff_Percentile": null,
-      "MASD": null,
-      "ASSD": null,
-      "NSD": null,
-      "BIoU": null
     }
   },
   "overall_3d_metrics": {

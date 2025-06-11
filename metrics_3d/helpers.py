@@ -35,49 +35,6 @@ def load_trimesh_to_obj(mesh_path):
         print(f"Error exporting {mesh_path} to {export_path}: {e}")
 
 
-# def safe_load_trimesh(mesh_path):
-#     """
-#     Load a mesh file using trimesh, ensuring it is a valid Trimesh object.
-#     Strips UVs and other visual attributes, then attempts to make it watertight.
-#     Args:
-#         mesh_path (str): Path to the mesh file.
-#     Returns:
-#         trimesh.Trimesh: A valid Trimesh object.
-#     Raises:
-#         ValueError: If the loaded mesh is not a valid Trimesh object.
-#     """
-#     mesh = trimesh.load(mesh_path)
-
-#     if isinstance(mesh, trimesh.Scene):
-#         print("is scene")
-#         mesh = mesh.to_mesh()
-
-#     if not isinstance(mesh, trimesh.Trimesh):
-#         raise ValueError(f"File {mesh_path} did not yield a Trimesh object.")
-
-#     # Strip UVs
-#     mesh.visual.uv = None
-
-#     # Create a new clean mesh with just vertices and faces
-#     # clean_mesh = trimesh.Trimesh(
-#     #     vertices=mesh.vertices.copy(),
-#     #     faces=mesh.faces.copy(),
-#     #     process=True  # Enable processing to fix normals and windings
-#     # )
-#     clean_mesh = mesh.copy()
-
-#     # Ensure the mesh is watertight and clean
-#     if not clean_mesh.is_watertight:
-#         print(f"[Warning] {mesh_path}: Mesh is not watertight, attempting to clean it.")
-#         clean_mesh.update_faces(clean_mesh.nondegenerate_faces())
-#         clean_mesh.remove_unreferenced_vertices()
-#         clean_mesh.merge_vertices()
-#         watertight = clean_mesh.fill_holes()
-#         print("watertight after cleaning:", watertight)
-
-#     return clean_mesh
-
-
 def safe_load_trimesh(mesh_path: str, logging: bool = True) -> trimesh.Trimesh:
     """
     Load a mesh file using trimesh, ensuring it is a valid Trimesh object.

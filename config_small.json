@@ -46,15 +46,15 @@
   },
   "metrics_3d": {
     "enabled": true,
-    "metrics": [
+    "fr_metrics": [
       "Hausdorff",
       "Hausdorff_Percentile",
       "MASD",
       "ASSD",
       "NSD",
-      "BIoU",
-      "MMPCQA"
+      "BIoU"
     ],
+    "nr_metrics": [],
     "spacing": [
       1.0,
       1.0,

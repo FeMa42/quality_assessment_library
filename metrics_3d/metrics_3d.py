@@ -7,21 +7,22 @@ from metrics_3d.helpers import (
 from tqdm.auto import tqdm
 
 
-class MeshMetrics3D:
+class Metrics3D:
     """
-    Compute a configurable subset of 3D mesh metrics using MeshMetrics' DistanceMetrics.
+    Compute a configurable subset of 3D mesh metrics using MeshMetrics' DistanceMetrics and MM_PCQA.
     """
 
     def __init__(
         self,
-        metric_list=None,
+        metric_fr_list=None,
+        metric_nr_list=None,
         spacing=(1.0, 1.0, 1.0),
         nsd_tau=1.0,
         biou_tau=1.0,
         hd_percentile=95.0,
     ):
         # Default to all MeshMetrics metrics if not specified
-        self.metric_list = metric_list or [
+        self.metric_fr_list = metric_fr_list or [
             "Hausdorff",
             "Hausdorff_Percentile",
             "MASD",
@@ -29,17 +30,23 @@ class MeshMetrics3D:
             "NSD",
             "BIoU",
         ]
+        # Default is an empty list for no-reference metrics
+        self.metric_nr_list = metric_nr_list  # or ["MM_PCQA"]
+
         self.spacing = spacing
         self.nsd_tau = nsd_tau
         self.biou_tau = biou_tau
         self.hd_percentile = hd_percentile
         self.available_metrics = {
+            # full reference metrics:
             "Hausdorff": self._hausdorff,
             "Hausdorff_Percentile": self._hausdorff_percentile,
             "MASD": self._masd,
             "ASSD": self._assd,
             "NSD": self._nsd,
             "BIoU": self._biou,
+            # no reference metrics:
+            "MM_PCQA": self._MM_PCQA,  # Placeholder for MM_PCQA metric
         }
 
     def _prepare(
@@ -81,6 +88,7 @@ class MeshMetrics3D:
         Args:
             pred_mesh_path (str): Path to the predicted mesh file.
             gt_mesh_path (str): Path to the ground truth mesh file.
+            logging (bool): Whether to log the process.
         Returns:
             tuple: A tuple containing a dictionary with the computed metrics and if the metric caluclation was successful.
         """
@@ -101,7 +109,7 @@ class MeshMetrics3D:
         dm = DistanceMetrics()
         dm.set_input(gt, pred, spacing=self.spacing)
         results = {}
-        for name in self.metric_list:
+        for name in self.metric_fr_list:
             if name in self.available_metrics:
                 try:
                     if name == "Hausdorff_Percentile":
@@ -114,12 +122,39 @@ class MeshMetrics3D:
                     results[name] = None
                     if logging:
                         print(
-                            f"[MeshMetrics3D] Error computing {name} for {pred_mesh_path}: {e}"
+                            f"[Metrics3D] Error computing {name} for {pred_mesh_path}: {e}"
                         )
                     success = False
         return results, success
 
-    # MeshMetrics3D methods for each metric
+    def compute_no_reference_metrics(self, mesh_path: str) -> tuple:
+        """
+        Compute no-reference metrics for a single mesh.
+        Args:
+            mesh_path (str): Path to the mesh file.
+        Returns:
+            tuple: A tuple containing a dictionary with the computed metrics and if the metric caluclation was successful.
+        """
+        success = True
+        results = {}
+        if self.metric_nr_list is None or len(self.metric_nr_list) == 0:
+            print(
+                "[Metrics3D] No no-reference metrics specified, skipping computation."
+            )
+            success = False
+            return results, success
+
+        for name in self.metric_nr_list:
+            if name in self.available_metrics:
+                try:
+                    results[name] = self.available_metrics[name](mesh_path)
+                except Exception as e:
+                    results[name] = None
+                    print(f"[Metrics3D] Error computing {name} for {mesh_path}: {e}")
+                    success = False
+        return results, success
+
+    # Metrics3D methods for each metric
     def _hausdorff(self, dm: DistanceMetrics) -> float:
         """
         Hausdorff Distance (MeshMetrics)
@@ -138,7 +173,7 @@ class MeshMetrics3D:
         self, dm: DistanceMetrics, percentile: float = 95.0
     ) -> float:
         """
-        Percentile Hausdorff Distance (e.g., HD_95)
+        Percentile Hausdorff Distance (e.g., HD_95) (MeshMetrics)
         - Same as Hausdorff, but returns the distance at a given percentile (e.g., 95th).
         - Reduces sensitivity to outliers or tiny spikes.
 
@@ -204,17 +239,28 @@ class MeshMetrics3D:
         """
         return dm.biou(tau=self.biou_tau)
 
+    def _MM_PCQA(self, mesh_path: str) -> float:
+        """
+        MM_PCQA
+        - Placeholder for MM_PCQA metric, which is not implemented in this class.
+        - This method can be extended to include the MM_PCQA metric if needed.
 
-def process_mesh_folder(
-    gt_folder: str, pred_folder: str, metric_class: MeshMetrics3D, logging=True
+        Returns:
+            float: Not implemented, returns None.
+        """
+        raise NotImplementedError("MM_PCQA metric is not implemented in Metrics3D.")
+
+
+def process_mesh_folder_fr(
+    gt_folder: str, pred_folder: str, metric_class: Metrics3D, logging=True
 ) -> dict:
     """
-    Process a folder of meshes, computing metrics for each pair of ground truth and predicted meshes.
+    Process a folder of meshes, computing FULL REFERENCE metrics for each pair of ground truth and predicted meshes.
     Currently supports obj/glb/ply/stl files.
     Args:
         gt_folder (str): Path to the folder containing ground truth meshes.
         pred_folder (str): Path to the folder containing predicted meshes.
-        metric_class: An instance of MeshMetrics3D for computing metrics.
+        metric_class: An instance of Metrics3D for computing metrics.
     Returns:
         dict: A dictionary mapping mesh filenames to their computed metrics.
     """
@@ -233,9 +279,55 @@ def process_mesh_folder(
         if os.path.exists(pred_path):
             try:
                 if logging:
-                    tqdm.write(f"Computing metrics for: {file}")
+                    tqdm.write(f"Computing full reference metrics for: {file}")
                 results[file], success = metric_class.compute_mesh_pair(
                     pred_path, gt_path, logging=logging
+                )
+                if logging:
+                    tqdm.write(f"\t Metrics computation success: {success} for: {file}")
+            except AssertionError as e:
+                if logging:
+                    tqdm.write(f"\t Assertion error for {file}: {e}")
+    return results
+
+
+def process_mesh_folder_nr(
+    mesh_folder: str, metric_class: Metrics3D, logging=True
+) -> dict:
+    """
+    Process a folder of meshes, computing NO REFERENCE metrics for each mesh.
+    Currently supports obj/glb/ply/stl files.
+    Args:
+        mesh_folder (str): Path to the folder containing meshes.
+        metric_class: An instance of Metrics3D for computing metrics.
+    Returns:
+        dict: A dictionary mapping mesh filenames to their computed metrics.
+    """
+    results = {}
+    # check if any no-reference metrics are specified
+    if metric_class.metric_nr_list is None or len(metric_class.metric_nr_list) == 0:
+        print(
+            "[Metrics3D] No no-reference metrics specified in config file, skipping computation."
+        )
+        success = False
+        return results
+
+    mesh_files = [
+        file
+        for file in os.listdir(mesh_folder)
+        if file.endswith(".obj")
+        or file.endswith(".glb")
+        or file.endswith(".ply")
+        or file.endswith(".stl")
+    ]
+    for file in tqdm(mesh_files, desc="Processing meshes", unit="file"):
+        mesh_path = os.path.join(mesh_folder, file)
+        if os.path.exists(mesh_path):
+            try:
+                if logging:
+                    tqdm.write(f"Computing no-reference metrics for: {file}")
+                results[file], success = metric_class.compute_no_reference_metrics(
+                    mesh_path
                 )
                 if logging:
                     tqdm.write(f"\t Metrics computation success: {success} for: {file}")
