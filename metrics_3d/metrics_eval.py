@@ -21,6 +21,7 @@ def process_3d_metrics(
     metrics_3d_cfg = cfg.get("metrics_3d", {})
     metrics_3d_enabled = metrics_3d_cfg.get("enabled", True)
     metrics_3d_fr_list = metrics_3d_cfg.get("fr_metrics", None)
+    metrics_3d_fr_pc_list = metrics_3d_cfg.get("fr_pc_metrics", None)
     metrics_3d_nr_list = metrics_3d_cfg.get("nr_metrics", None)
     metrics_3d_spacing = metrics_3d_cfg.get("spacing", [1.0, 1.0, 1.0])
     metrics_3d_nsd_tau = metrics_3d_cfg.get("nsd_tau", 1.0)
@@ -33,6 +34,7 @@ def process_3d_metrics(
     # Instantiate metric class
     metrics_3D = Metrics3D(
         metric_fr_list=metrics_3d_fr_list,
+        metric_fr_pc_list=metrics_3d_fr_pc_list,
         metric_nr_list=metrics_3d_nr_list,
         spacing=metrics_3d_spacing,
         nsd_tau=metrics_3d_nsd_tau,

@@ -54,6 +54,13 @@
       "NSD",
       "BIoU"
     ],
+    "fr_pc_metrics": [
+      "Chamfer_Distance",
+      "Hausdorff_PC",
+      "Hausdorff_Percentile_PC",
+      "Point_to_Surface_RMSE",
+      "Earth_Mover_Distance"
+    ],
     "nr_metrics": [],
     "spacing": [
       1.0,
@@ -62,6 +69,7 @@
     ],
     "nsd_tau": 1.0,
     "biou_tau": 1.0,
-    "Hausdorff_Percentile": 95
+    "Hausdorff_Percentile": 95,
+    "pc_n_samples": 10000,
   }
 }

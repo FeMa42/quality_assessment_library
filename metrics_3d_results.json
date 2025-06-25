@@ -1,5 +1,13 @@
 {
   "per_object": {
+    "Cube.glb": {
+      "Hausdorff": 0.0,
+      "Hausdorff_Percentile": 0.0,
+      "MASD": 0.0,
+      "ASSD": 0.0,
+      "NSD": 1.0,
+      "BIoU": NaN
+    },
     "example_3d_ref_mesh.obj": {
       "Hausdorff": 5.102196573270515e-15,
       "Hausdorff_Percentile": 4.070144838902081e-15,
@@ -7,14 +15,22 @@
       "ASSD": 1.0964651504117141e-15,
       "NSD": 1.0,
       "BIoU": 1.0
+    },
+    "mesh.ply": {
+      "Hausdorff": null,
+      "Hausdorff_Percentile": null,
+      "MASD": null,
+      "ASSD": null,
+      "NSD": null,
+      "BIoU": null
     }
   },
   "overall_3d_metrics": {
-    "Hausdorff": 5.102196573270515e-15,
-    "Hausdorff_Percentile": 4.070144838902081e-15,
-    "MASD": 1.0964651504117141e-15,
-    "ASSD": 1.0964651504117141e-15,
+    "Hausdorff": 2.5510982866352577e-15,
+    "Hausdorff_Percentile": 2.0350724194510405e-15,
+    "MASD": 5.482325752058571e-16,
+    "ASSD": 5.482325752058571e-16,
     "NSD": 1.0,
-    "BIoU": 1.0
+    "BIoU": NaN
   }
 }

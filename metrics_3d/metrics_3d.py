@@ -5,6 +5,8 @@ from metrics_3d.helpers import (
     safe_load_trimesh,
 )
 from tqdm.auto import tqdm
+import numpy as np
+from scipy.spatial.distance import cdist
 
 
 class Metrics3D:
@@ -15,11 +17,13 @@ class Metrics3D:
     def __init__(
         self,
         metric_fr_list=None,
+        metric_fr_pc_list=None,
         metric_nr_list=None,
         spacing=(1.0, 1.0, 1.0),
         nsd_tau=1.0,
         biou_tau=1.0,
         hd_percentile=95.0,
+        pc_n_samples=10000,
     ):
         # Default to all MeshMetrics metrics if not specified
         self.metric_fr_list = metric_fr_list or [
@@ -37,6 +41,8 @@ class Metrics3D:
         self.nsd_tau = nsd_tau
         self.biou_tau = biou_tau
         self.hd_percentile = hd_percentile
+        self.pc_n_samples = pc_n_samples
+
         self.available_metrics = {
             # full reference metrics:
             "Hausdorff": self._hausdorff,
@@ -45,6 +51,12 @@ class Metrics3D:
             "ASSD": self._assd,
             "NSD": self._nsd,
             "BIoU": self._biou,
+            # Point Cloud metrics (work with any mesh):
+            "Chamfer_Distance": self._chamfer_distance,
+            "Hausdorff_PC": self._hausdorff_pc,
+            "Hausdorff_Percentile_PC": self._hausdorff_percentile_pc,
+            "Point_to_Surface_RMSE": self._point_to_surface_rmse,
+            "Earth_Mover_Distance": self._earth_mover_distance,
             # no reference metrics:
             "MM_PCQA": self._MM_PCQA,  # Placeholder for MM_PCQA metric
         }
@@ -79,6 +91,16 @@ class Metrics3D:
         pred_vtk = trimesh_to_vtk(pred)
         gt_vtk = trimesh_to_vtk(gt)
         return gt_vtk, pred_vtk, True
+
+    def _prepare_pc(
+        self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
+    ) -> tuple:
+        """
+        Load meshes for point cloud metrics (no watertightness requirement).
+        """
+        pred = safe_load_trimesh(pred_mesh_path, logging=logging)
+        gt = safe_load_trimesh(gt_mesh_path, logging=logging)
+        return pred, gt, True
 
     def compute_mesh_pair(
         self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
@@ -238,6 +260,66 @@ class Metrics3D:
             float: the boundary IoU score between the two meshes.
         """
         return dm.biou(tau=self.biou_tau)
+
+    # Point Cloud metric implementations
+    def _chamfer_distance(self, pred_mesh, gt_mesh) -> float:
+        """Chamfer Distance using point cloud sampling"""
+        pred_points = pred_mesh.sample(self.pc_n_samples)
+        gt_points = gt_mesh.sample(self.pc_n_samples)
+
+        dist_matrix = cdist(pred_points, gt_points)
+        chamfer = np.mean(np.min(dist_matrix, axis=1)) + np.mean(
+            np.min(dist_matrix, axis=0)
+        )
+        return chamfer / 2  # Average of both directions
+
+    def _hausdorff_pc(self, pred_mesh, gt_mesh) -> float:
+        """Hausdorff Distance using point cloud sampling"""
+        pred_points = pred_mesh.sample(self.pc_n_samples)
+        gt_points = gt_mesh.sample(self.pc_n_samples)
+
+        dist_matrix = cdist(pred_points, gt_points)
+        return max(
+            np.max(np.min(dist_matrix, axis=1)), np.max(np.min(dist_matrix, axis=0))
+        )
+
+    def _hausdorff_percentile_pc(
+        self, pred_mesh, gt_mesh, percentile: float = 95.0
+    ) -> float:
+        """Percentile Hausdorff Distance using point cloud sampling"""
+        pred_points = pred_mesh.sample(self.pc_n_samples)
+        gt_points = gt_mesh.sample(self.pc_n_samples)
+
+        dist_matrix = cdist(pred_points, gt_points)
+        dist1 = np.min(dist_matrix, axis=1)
+        dist2 = np.min(dist_matrix, axis=0)
+        return max(np.percentile(dist1, percentile), np.percentile(dist2, percentile))
+
+    def _point_to_surface_rmse(self, pred_mesh, gt_mesh) -> float:
+        """Point-to-surface RMSE"""
+        pred_points = pred_mesh.sample(self.pc_n_samples)
+        distances = []
+        for point in pred_points:
+            _, distance = gt_mesh.nearest.on_surface([point])
+            distances.append(distance[0])
+        return np.sqrt(np.mean(np.array(distances) ** 2))
+
+    def _earth_mover_distance(self, pred_mesh, gt_mesh) -> float:
+        """Earth Mover's Distance (simplified version)"""
+        try:
+            from scipy.optimize import linear_sum_assignment
+
+            # Sample equal numbers of points
+            pred_points = pred_mesh.sample(
+                min(1000, self.pc_n_samples)
+            )  # Smaller for EMD
+            gt_points = gt_mesh.sample(len(pred_points))
+
+            cost_matrix = cdist(pred_points, gt_points)
+            row_ind, col_ind = linear_sum_assignment(cost_matrix)
+            return cost_matrix[row_ind, col_ind].sum() / len(pred_points)
+        except Exception as e:
+            return -np.inf  # EMD can be expensive/fail for large point clouds
 
     def _MM_PCQA(self, mesh_path: str) -> float:
         """
