@@ -1,12 +1,20 @@
 {
   "per_object": {
-    "Cube.glb": {
+    "cube.glb": {
       "Hausdorff": 0.0,
       "Hausdorff_Percentile": 0.0,
       "MASD": 0.0,
       "ASSD": 0.0,
       "NSD": 1.0,
-      "BIoU": NaN
+      "BIoU": NaN,
+      "Chamfer_Distance": 0.0,
+      "Hausdorff_PC": 0.0,
+      "Hausdorff_Percentile_PC": 0.0,
+      "Point_to_Surface_RMSE": 9.971345095999414e-17,
+      "Earth_Mover_Distance": 0.0,
+      "Convex_Hull_Volume_Difference": 0.0,
+      "Bounding_Box_Volume_Difference": 0.0,
+      "Point_Density_Volume_Difference": 0.0
     },
     "example_3d_ref_mesh.obj": {
       "Hausdorff": 5.102196573270515e-15,
@@ -14,7 +22,31 @@
       "MASD": 1.0964651504117141e-15,
       "ASSD": 1.0964651504117141e-15,
       "NSD": 1.0,
-      "BIoU": 1.0
+      "BIoU": 1.0,
+      "Chamfer_Distance": 0.0,
+      "Hausdorff_PC": 0.0,
+      "Hausdorff_Percentile_PC": 0.0,
+      "Point_to_Surface_RMSE": 1.6088091529103553e-15,
+      "Earth_Mover_Distance": 0.0,
+      "Convex_Hull_Volume_Difference": 0.0,
+      "Bounding_Box_Volume_Difference": 0.0,
+      "Point_Density_Volume_Difference": 0.0
+    },
+    "mesh.glb": {
+      "Hausdorff": null,
+      "Hausdorff_Percentile": null,
+      "MASD": null,
+      "ASSD": null,
+      "NSD": null,
+      "BIoU": null,
+      "Chamfer_Distance": 0.060993131314990345,
+      "Hausdorff_PC": 0.33942533939450553,
+      "Hausdorff_Percentile_PC": 0.26237933103568706,
+      "Point_to_Surface_RMSE": 0.12471647646243746,
+      "Earth_Mover_Distance": 0.15624912723375156,
+      "Convex_Hull_Volume_Difference": 2.1378360700969927,
+      "Bounding_Box_Volume_Difference": 3.620314062440311,
+      "Point_Density_Volume_Difference": 1.7086614173228347
     },
     "mesh.ply": {
       "Hausdorff": null,
@@ -22,7 +54,15 @@
       "MASD": null,
       "ASSD": null,
       "NSD": null,
-      "BIoU": null
+      "BIoU": null,
+      "Chamfer_Distance": 0.0,
+      "Hausdorff_PC": 0.0,
+      "Hausdorff_Percentile_PC": 0.0,
+      "Point_to_Surface_RMSE": 1.4434545177943167e-08,
+      "Earth_Mover_Distance": 0.0,
+      "Convex_Hull_Volume_Difference": 0.0,
+      "Bounding_Box_Volume_Difference": 0.0,
+      "Point_Density_Volume_Difference": 0.0
     }
   },
   "overall_3d_metrics": {
@@ -31,6 +71,14 @@
     "MASD": 5.482325752058571e-16,
     "ASSD": 5.482325752058571e-16,
     "NSD": 1.0,
-    "BIoU": NaN
+    "BIoU": NaN,
+    "Chamfer_Distance": 0.015248282828747586,
+    "Hausdorff_PC": 0.08485633484862638,
+    "Hausdorff_Percentile_PC": 0.06559483275892176,
+    "Point_to_Surface_RMSE": 0.031179122724246087,
+    "Earth_Mover_Distance": 0.03906228180843789,
+    "Convex_Hull_Volume_Difference": 0.5344590175242482,
+    "Bounding_Box_Volume_Difference": 0.9050785156100778,
+    "Point_Density_Volume_Difference": 0.4271653543307087
   }
 }

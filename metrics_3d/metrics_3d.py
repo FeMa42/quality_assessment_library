@@ -3,10 +3,16 @@ from MeshMetrics.metrics import DistanceMetrics
 from metrics_3d.helpers import (
     trimesh_to_vtk,
     safe_load_trimesh,
+    estimate_volume_from_points,
 )
 from tqdm.auto import tqdm
 import numpy as np
 from scipy.spatial.distance import cdist
+from scipy.optimize import linear_sum_assignment
+from scipy.spatial import ConvexHull
+import trimesh
+import vtk
+from typing import Tuple
 
 
 class Metrics3D:
@@ -26,17 +32,9 @@ class Metrics3D:
         pc_n_samples=10000,
     ):
         # Default to all MeshMetrics metrics if not specified
-        self.metric_fr_list = metric_fr_list or [
-            "Hausdorff",
-            "Hausdorff_Percentile",
-            "MASD",
-            "ASSD",
-            "NSD",
-            "BIoU",
-        ]
-        # Default is an empty list for no-reference metrics
-        self.metric_nr_list = metric_nr_list  # or ["MM_PCQA"]
-
+        self.metric_fr_list = metric_fr_list or None
+        self.metric_nr_list = metric_nr_list or None  # or ["MM_PCQA"]
+        self.metric_fr_pc_list = metric_fr_pc_list or None
         self.spacing = spacing
         self.nsd_tau = nsd_tau
         self.biou_tau = biou_tau
@@ -57,50 +55,47 @@ class Metrics3D:
             "Hausdorff_Percentile_PC": self._hausdorff_percentile_pc,
             "Point_to_Surface_RMSE": self._point_to_surface_rmse,
             "Earth_Mover_Distance": self._earth_mover_distance,
+            "Convex_Hull_Volume_Difference": self._convex_hull_volume_difference,
+            "Bounding_Box_Volume_Difference": self._bbox_volume_difference,
+            "Point_Density_Volume_Difference": self._point_density_volume_difference,
             # no reference metrics:
             "MM_PCQA": self._MM_PCQA,  # Placeholder for MM_PCQA metric
         }
 
     def _prepare(
         self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
-    ) -> tuple:
+    ) -> Tuple[
+        vtk.vtkPolyData, vtk.vtkPolyData, trimesh.Trimesh, trimesh.Trimesh, bool
+    ]:
         """
         Load and convert meshes to vtkPolyData for distance metrics computation.
         Args:
             pred_mesh_path (str): Path to the predicted mesh file.
             gt_mesh_path (str): Path to the ground truth mesh file.
         Returns:
-            tuple: A tuple containing the ground truth and predicted meshes as vtkPolyData.
+            tuple: A tuple containing the ground truth and predicted meshes as vtkPolyData and Trimesh, as well as a boolean depicting watertightness.
         """
-        pred = safe_load_trimesh(pred_mesh_path, logging=logging)
-        if not pred.is_watertight:
+        watertight = True
+        pred_trimesh = safe_load_trimesh(pred_mesh_path, logging=logging)
+        if not pred_trimesh.is_watertight:
             if logging:
                 print(
-                    f"\t [Warning] {pred_mesh_path}: Not watertight after trying to repair -> No Comparison possible."
+                    f"\t [Warning] {pred_mesh_path}: Not watertight after trying to repair -> Only Point Cloud based Comparison possible."
                 )
-            return None, None, False  # Skip non-watertight meshes
-        gt = safe_load_trimesh(gt_mesh_path, logging=logging)
-        if not gt.is_watertight:
+            watertight = False
+        gt_trimesh = safe_load_trimesh(gt_mesh_path, logging=logging)
+        if not gt_trimesh.is_watertight:
             if logging:
                 print(
-                    f"\t [Warning] {gt_mesh_path}: Not watertight after trying to repair -> No Comparison possible."
+                    f"\t [Warning] {gt_mesh_path}: Not watertight after trying to repair -> Only Point Cloud based Comparison possible."
                 )
-            return None, None, False  # Skip non-watertight meshes
+            watertight = False
 
-        # Convert to vtkPolyData for distance metrics
-        pred_vtk = trimesh_to_vtk(pred)
-        gt_vtk = trimesh_to_vtk(gt)
-        return gt_vtk, pred_vtk, True
+        # Convert to vtkPolyData for mesh based distance metrics
+        pred_vtk = trimesh_to_vtk(pred_trimesh)
+        gt_vtk = trimesh_to_vtk(gt_trimesh)
 
-    def _prepare_pc(
-        self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
-    ) -> tuple:
-        """
-        Load meshes for point cloud metrics (no watertightness requirement).
-        """
-        pred = safe_load_trimesh(pred_mesh_path, logging=logging)
-        gt = safe_load_trimesh(gt_mesh_path, logging=logging)
-        return pred, gt, True
+        return gt_vtk, pred_vtk, gt_trimesh, pred_trimesh, watertight
 
     def compute_mesh_pair(
         self, pred_mesh_path: str, gt_mesh_path: str, logging: bool = True
@@ -114,39 +109,83 @@ class Metrics3D:
         Returns:
             tuple: A tuple containing a dictionary with the computed metrics and if the metric caluclation was successful.
         """
+
         success = True
-        gt, pred, watertight = self._prepare(
+        results = {}
+
+        # convert meshes to Trimesh and vtkPolyData
+        gt_vtk, pred_vtk, gt_trimesh, pred_trimesh, watertight = self._prepare(
             pred_mesh_path, gt_mesh_path, logging=logging
         )
-        if not watertight:
-            success = False
-            return {
-                "Hausdorff": None,
-                "Hausdorff_Percentile": None,
-                "MASD": None,
-                "ASSD": None,
-                "NSD": None,
-                "BIoU": None,
-            }, success
-        dm = DistanceMetrics()
-        dm.set_input(gt, pred, spacing=self.spacing)
-        results = {}
-        for name in self.metric_fr_list:
-            if name in self.available_metrics:
-                try:
-                    if name == "Hausdorff_Percentile":
-                        results[name] = self.available_metrics[name](
-                            dm, percentile=self.hd_percentile
-                        )
-                    else:
-                        results[name] = self.available_metrics[name](dm)
-                except Exception as e:
+
+        # 1. Compute MeshMetrics (require watertight meshes)
+        if self.metric_fr_list:
+            if watertight:
+                dm = DistanceMetrics()
+                dm.set_input(gt_vtk, pred_vtk, spacing=self.spacing)
+
+                for name in self.metric_fr_list:
+                    if name in self.available_metrics:
+                        try:
+                            if name == "Hausdorff_Percentile":
+                                results[name] = self.available_metrics[name](
+                                    dm, percentile=self.hd_percentile
+                                )
+                            else:
+                                results[name] = self.available_metrics[name](dm)
+                        except Exception as e:
+                            results[name] = None
+                            if logging:
+                                tqdm.write(f"[Metrics3D] Error computing {name}: {e}")
+                            success = False
+            else:
+                # Set MeshMetrics to None if not watertight
+                for name in self.metric_fr_list:
+                    if name in self.available_metrics:
+                        results[name] = None
+                success = False
+
+        # 2. Compute Point Cloud metrics (works with any mesh)
+        if self.metric_fr_pc_list:
+            # Create point clouds from meshes using fixed seeds
+            np.random.seed(42)  # For reproducibility
+            pred_pc = pred_trimesh.sample(self.pc_n_samples)
+            np.random.seed(42)  # For reproducibility
+            gt_pc = gt_trimesh.sample(self.pc_n_samples)
+            np.random.seed(None)  # Reset seed
+
+            for name in self.metric_fr_pc_list:
+                if name in self.available_metrics:
+                    try:
+                        if name == "Hausdorff_Percentile_PC":
+                            results[name] = self.available_metrics[name](
+                                pred_pc, gt_pc, percentile=self.hd_percentile
+                            )
+                        elif name == "Point_to_Surface_RMSE":
+                            results[name] = self.available_metrics[name](
+                                pred_trimesh, gt_trimesh
+                            )
+                        elif name == "Earth_Mover_Distance":
+                            results[name] = self.available_metrics[name](
+                                pred_trimesh, gt_trimesh
+                            )
+                        else:
+                            # Default Case for point cloud metrics
+                            results[name] = self.available_metrics[name](pred_pc, gt_pc)
+                    except Exception as e:
+                        results[name] = None
+                        if logging:
+                            tqdm.write(f"[Metrics3D] Error computing {name}: {e}")
+                        success = False
+
+        # 3. Compute no-reference metrics TODO
+        if self.metric_nr_list:
+            if logging:
+                tqdm.write("[Metrics3D] No Reference Metrics currently not implemented")
+            for name in self.metric_nr_list:
+                if name in self.available_metrics:
                     results[name] = None
-                    if logging:
-                        print(
-                            f"[Metrics3D] Error computing {name} for {pred_mesh_path}: {e}"
-                        )
-                    success = False
+
         return results, success
 
     def compute_no_reference_metrics(self, mesh_path: str) -> tuple:
@@ -262,65 +301,293 @@ class Metrics3D:
         return dm.biou(tau=self.biou_tau)
 
     # Point Cloud metric implementations
-    def _chamfer_distance(self, pred_mesh, gt_mesh) -> float:
-        """Chamfer Distance using point cloud sampling"""
-        pred_points = pred_mesh.sample(self.pc_n_samples)
-        gt_points = gt_mesh.sample(self.pc_n_samples)
+    def _chamfer_distance(
+        self, pred: Tuple[float, int], gt: Tuple[float, int]
+    ) -> float:
+        """
+        Chamfer Distance using point cloud sampling
 
-        dist_matrix = cdist(pred_points, gt_points)
+        - Measures the AVERAGE distance from each point in one cloud to the nearest point in the other cloud.
+        - Sensitive to outliers (large errors get amplified).
+        - Useful for evaluating the overall shape similarity between two point clouds.
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = perfect match (predicted points lie exactly on GT points)
+        - Lower values = better prediction quality
+        - Higher values = worse prediction quality
+
+        Args:
+            pred (Tuple[float, int]): Predicted mesh points (sample_size, 3).
+            gt (Tuple[float, int]): Ground truth mesh points (sample_size, 3).
+        Returns:
+            float: Chamfer distance between the predicted and ground truth point clouds.
+        """
+
+        dist_matrix = cdist(pred, gt)
         chamfer = np.mean(np.min(dist_matrix, axis=1)) + np.mean(
             np.min(dist_matrix, axis=0)
         )
         return chamfer / 2  # Average of both directions
 
-    def _hausdorff_pc(self, pred_mesh, gt_mesh) -> float:
-        """Hausdorff Distance using point cloud sampling"""
-        pred_points = pred_mesh.sample(self.pc_n_samples)
-        gt_points = gt_mesh.sample(self.pc_n_samples)
+    def _hausdorff_pc(self, pred: Tuple[float, int], gt: Tuple[float, int]) -> float:
+        """
+        Hausdorff Distance using point cloud sampling
 
-        dist_matrix = cdist(pred_points, gt_points)
+        - Measures the MAXIMUM distance from each point in one cloud to the nearest point in the other cloud.
+        - Sensitive to outliers (large errors get amplified).
+        - Useful for evaluating the worst-case distance between two point clouds.
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = perfect match (predicted points lie exactly on GT points)
+        - Lower values = better prediction quality
+        - Higher values = worse prediction quality
+        - No percentile, always returns the maximum distance.
+
+        Args:
+            pred (Tuple[float, int]): Predicted mesh points (sample_size, 3).
+            gt (Tuple[float, int]): Ground truth mesh points (sample_size, 3).
+        Returns:
+            float: Hausdorff distance between the predicted and ground truth point clouds.
+        """
+        dist_matrix = cdist(pred, gt)
         return max(
             np.max(np.min(dist_matrix, axis=1)), np.max(np.min(dist_matrix, axis=0))
         )
 
     def _hausdorff_percentile_pc(
-        self, pred_mesh, gt_mesh, percentile: float = 95.0
+        self, pred: Tuple[float, int], gt: Tuple[float, int], percentile: float = 95.0
     ) -> float:
-        """Percentile Hausdorff Distance using point cloud sampling"""
-        pred_points = pred_mesh.sample(self.pc_n_samples)
-        gt_points = gt_mesh.sample(self.pc_n_samples)
+        """
+        Percentile Hausdorff Distance using point cloud sampling
 
-        dist_matrix = cdist(pred_points, gt_points)
+        - Computes the Hausdorff distance at a specified percentile (e.g., 95th).
+        - Reduces sensitivity to outliers or tiny spikes in the point cloud.
+        - Useful for evaluating the worst-case distance at a given percentile.
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = perfect match (predicted points lie exactly on GT points)
+        - Lower values = better prediction quality
+        - Higher values = worse prediction quality
+        - Percentile determines how much of the worst-case distance is considered
+          (e.g., 95% of distances are below this value).
+
+        Args:
+            pred (Tuple[float, int]): Predicted mesh points (sample_size, 3).
+            gt (Tuple[float, int]): Ground truth mesh points (sample_size, 3).
+            percentile (float): Percentile to compute the Hausdorff distance at.
+        Returns:
+            float: Hausdorff distance at the specified percentile between the predicted and ground truth point clouds
+        """
+
+        dist_matrix = cdist(pred, gt)
         dist1 = np.min(dist_matrix, axis=1)
         dist2 = np.min(dist_matrix, axis=0)
-        return max(np.percentile(dist1, percentile), np.percentile(dist2, percentile))
+        return max(
+            np.percentile(dist1, self.hd_percentile),
+            np.percentile(dist2, self.hd_percentile),
+        )
 
-    def _point_to_surface_rmse(self, pred_mesh, gt_mesh) -> float:
-        """Point-to-surface RMSE"""
-        pred_points = pred_mesh.sample(self.pc_n_samples)
-        distances = []
-        for point in pred_points:
-            _, distance = gt_mesh.nearest.on_surface([point])
-            distances.append(distance[0])
+    def _point_to_surface_rmse(
+        self, pred: trimesh.Trimesh, gt: trimesh.Trimesh
+    ) -> float:
+        """
+        Point-to-surface RMSE
+
+        - Samples points from predicted mesh surface
+        - Finds nearest point on ground truth surface for each sample
+        - Computes RMSE of all distances (asymmetric: pred → GT only)
+        - Sensitive to outliers (large errors get amplified)
+        - Measures how accurately prediction captures true surface
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = perfect match (predicted points lie exactly on GT surface)
+        - Lower values = better prediction quality
+        - Higher values = worse prediction quality
+
+        Args:
+            pred (trimesh.Trimesh): Predicted mesh.
+            gt (trimesh.Trimesh): Ground truth mesh.
+        Returns:
+            float: Root Mean Square Error (RMSE) of the distances from predicted points to the nearest point on the ground truth surface.
+        """
+        np.random.seed(42)  # For reproducibility
+        pred_pc = pred.sample(self.pc_n_samples)
+        np.random.seed(None)  # Reset seed
+        # distances = []
+        # for point in pred_pc:
+        #     _, distance, __ = gt.nearest.on_surface([point])
+        #     distances.append(distance[0])
+        _, distances, _ = gt.nearest.on_surface(pred_pc)
         return np.sqrt(np.mean(np.array(distances) ** 2))
 
-    def _earth_mover_distance(self, pred_mesh, gt_mesh) -> float:
-        """Earth Mover's Distance (simplified version)"""
+    def _earth_mover_distance(
+        self, pred: trimesh.Trimesh, gt: trimesh.Trimesh
+    ) -> float:
+        """
+        Earth Mover's Distance (or Wasserstein Distance)
+
+        - Samples equal numbers of points from both meshes
+        - Finds optimal matching between point sets (min-cost assignment)
+        - Computes average cost to transform one point cloud to another
+        - Measures shape correspondence and deformation quality
+        - Uses smaller sample size (1/10th) for computational efficiency (O(n³))
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = perfect match (identical point clouds)
+        - -Inf = computation failure (e.g., empty point cloud)
+        - Lower values = better shape correspondence
+        - Higher values = more deformation/shape difference needed
+        - Return scale depends on the scale of the input meshes
+        - Typical "good" values: < 10% of mesh bounding box diagonal
+        - Returns -inf on computation failure
+
+        Args:
+            pred (trimesh.Trimesh): Predicted mesh.
+            gt (trimesh.Trimesh): Ground truth mesh.
+        Returns:
+            float: Earth Mover's Distance between the predicted and ground truth point clouds.
+        """
         try:
-            from scipy.optimize import linear_sum_assignment
-
             # Sample equal numbers of points
-            pred_points = pred_mesh.sample(
-                min(1000, self.pc_n_samples)
-            )  # Smaller for EMD
-            gt_points = gt_mesh.sample(len(pred_points))
+            np.random.seed(42)  # For reproducibility
+            pred_pc = pred.sample(
+                int(self.pc_n_samples / 10)
+            )  # Smaller Sample Size for EMD
+            np.random.seed(42)  # For reproducibility
+            gt_pc = gt.sample(len(pred_pc))
+            np.random.seed(None)  # Reset seed
 
-            cost_matrix = cdist(pred_points, gt_points)
+            cost_matrix = cdist(pred_pc, gt_pc)
             row_ind, col_ind = linear_sum_assignment(cost_matrix)
-            return cost_matrix[row_ind, col_ind].sum() / len(pred_points)
-        except Exception as e:
+            return cost_matrix[row_ind, col_ind].sum() / len(pred_pc)
+        except Exception:
             return -np.inf  # EMD can be expensive/fail for large point clouds
 
+    def _convex_hull_volume_difference(
+        self, pred: Tuple[float, int], gt: Tuple[float, int]
+    ) -> float:
+        """
+        Convex Hull Volume Difference (Point Cloud Based)
+
+        - Samples points from both meshes
+        - Computes convex hull volumes from point clouds
+        - Good approximation for convex or nearly-convex objects
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = identical convex hull volumes
+        - -1.0 = error indicator (e.g., mesh loading failed)
+        - Lower values = more similar overall size/shape
+        - Higher values = significant size differences
+        - Scale: relative difference (0.5 = 50% difference)
+
+        Args:
+            pred_mesh (trimesh.Trimesh): Predicted mesh
+            gt_mesh (trimesh.Trimesh): Ground truth mesh
+        Returns:
+            float: Relative difference in convex hull volumes
+        """
+        try:
+            # Compute convex hulls and their volumes
+
+            pred_hull = ConvexHull(pred)
+            gt_hull = ConvexHull(gt)
+
+            pred_volume = pred_hull.volume
+            gt_volume = gt_hull.volume
+
+            if gt_volume == 0:
+                return float("inf") if pred_volume > 0 else 0.0
+
+            return abs(pred_volume - gt_volume) / gt_volume
+
+        except Exception:
+            return -1.0  # Error indicator
+
+    def _bbox_volume_difference(
+        self, pred: Tuple[float, int], gt: Tuple[float, int]
+    ) -> float:
+        """
+        Bounding Box Volume Difference (Point Cloud Based)
+
+        - Samples points from both meshes
+        - Computes axis-aligned bounding box volumes
+        - Fast and robust for size change detection
+        - Works well for detecting scale/size differences
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = identical bounding box volumes
+        - 1.0 = 100% volume difference (e.g., doubled height)
+        - -1.0 = error indicator (e.g., mesh loading failed)
+        - Good for detecting overall size changes
+
+        Args:
+            pred_mesh (trimesh.Trimesh): Predicted mesh
+            gt_mesh (trimesh.Trimesh): Ground truth mesh
+        Returns:
+            float: Relative difference in bounding box volumes
+        """
+        try:
+            # Compute bounding boxes
+            pred_min, pred_max = np.min(pred, axis=0), np.max(pred, axis=0)
+            gt_min, gt_max = np.min(gt, axis=0), np.max(gt, axis=0)
+
+            # Compute volumes
+            pred_volume = np.prod(pred_max - pred_min)
+            gt_volume = np.prod(gt_max - gt_min)
+
+            if gt_volume == 0:
+                return float("inf") if pred_volume > 0 else 0.0
+
+            return abs(pred_volume - gt_volume) / gt_volume
+
+        except Exception:
+            return -1.0  # Error indicator
+
+    def _point_density_volume_difference(
+        self, pred: Tuple[float, int], gt: Tuple[float, int]
+    ) -> float:
+        """
+        Point Density Volume Difference (Advanced PC Method)
+
+        - Samples points uniformly from mesh surfaces
+        - Estimates volume using point density in 3D grid
+        - More accurate than bounding box, works with complex shapes
+        - Good balance between accuracy and robustness
+
+        Output Interpretation:
+        - Range: [0, ∞) - always non-negative
+        - 0 = similar estimated volumes
+        - -1.0 = error indicator (e.g., mesh loading failed)
+        - Values depend on voxel resolution and mesh complexity
+        - Better for detecting actual volume changes vs just size
+
+        Args:
+            pred_mesh (trimesh.Trimesh): Predicted mesh
+            gt_mesh (trimesh.Trimesh): Ground truth mesh
+        Returns:
+            float: Relative difference in estimated volumes
+        """
+        try:
+            # Create 3D voxel grids for volume estimation
+            pred_volume = estimate_volume_from_points(pred)
+            gt_volume = estimate_volume_from_points(gt)
+
+            if gt_volume == 0:
+                return float("inf") if pred_volume > 0 else 0.0
+
+            return abs(pred_volume - gt_volume) / gt_volume
+
+        except Exception:
+            return -1.0  # Error indicator
+
+    # No Reference Metrics (nr)
     def _MM_PCQA(self, mesh_path: str) -> float:
         """
         MM_PCQA

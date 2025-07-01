@@ -1,6 +1,7 @@
 import vtk
 import os
 import trimesh
+import numpy as np
 
 
 def load_trimesh_to_obj(mesh_path):
@@ -102,3 +103,21 @@ def load_obj_with_vtk(filename):
     reader.Update()
     polydata = reader.GetOutput()
     return polydata
+
+
+def estimate_volume_from_points(points: tuple[float, int], voxel_size=0.1):
+    # Find bounding box
+    min_coords = np.min(points, axis=0)
+    # max_coords = np.max(points, axis=0)
+
+    # # Create voxel grid
+    # grid_dims = ((max_coords - min_coords) / voxel_size).astype(int) + 1
+
+    # Assign points to voxels
+    voxel_coords = ((points - min_coords) / voxel_size).astype(int)
+
+    # Count unique occupied voxels
+    unique_voxels = np.unique(voxel_coords, axis=0)
+    occupied_volume = len(unique_voxels) * (voxel_size**3)
+
+    return occupied_volume

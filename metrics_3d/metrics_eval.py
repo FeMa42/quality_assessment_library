@@ -48,9 +48,10 @@ def process_3d_metrics(
     )
 
     # TODO: Compute no reference metrics for all meshes in folder
-    nr_results_per_object = process_mesh_folder_nr(
-        generated_folder, metrics_3D, logging=logging
-    )
+    # nr_results_per_object = process_mesh_folder_nr(
+    #     generated_folder, metrics_3D, logging=logging
+    # )
+    nr_results_per_object = {}
 
     # Combine full reference and no reference results
     results_per_object = fr_results_per_object.copy()

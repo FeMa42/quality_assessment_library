@@ -59,9 +59,14 @@
       "Hausdorff_PC",
       "Hausdorff_Percentile_PC",
       "Point_to_Surface_RMSE",
-      "Earth_Mover_Distance"
+      "Earth_Mover_Distance",
+      "Convex_Hull_Volume_Difference",
+      "Bounding_Box_Volume_Difference",
+      "Point_Density_Volume_Difference"
     ],
-    "nr_metrics": [],
+    "nr_metrics": [
+      "MMPCQA"
+    ],
     "spacing": [
       1.0,
       1.0,
@@ -70,6 +75,6 @@
     "nsd_tau": 1.0,
     "biou_tau": 1.0,
     "Hausdorff_Percentile": 95,
-    "pc_n_samples": 10000,
+    "pc_n_samples": 100000
   }
 }
