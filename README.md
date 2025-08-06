@@ -7,6 +7,11 @@ It provides two main functionalities:
 
 - **This branch is specifically designed for the assessment of TRELLIS.** It enables the evaluation of 3D objects reconstructed with the TRELLIS model. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. It additionally includes the calculation of geometric metrics: Relative Difference of Bounding-Box Aspect Ratio, Relative Difference of occupied Pixel area, Relative Difference of Angle Difference of Silhouette Outline Normals (Pairwise and summed), Relative Difference of Squared Angle Difference of Silhouette Outline Normals (Pairwise and Summed). It will also compute the metrics from the Car Quality Classifier for the ground truth images, the generated images and their relative difference.
 
+- Furthermore it provides direct 3D specific metrics inside the metrics_3d module for:
+  - meshbased metrics utilizing the [MeshMetrics](https://github.com/gasperpodobnik/MeshMetrics) library
+  - point cloud metrics (no watertightness required)
+  - For more details on how to use metrics_3d see the [metrics_3d README](./metrics_3d/README.md) or for a quick start the [jupyter notebook example](./metrics_3d_example.ipynb)
+
 ## Installation
 
 ### System Dependencies
@@ -51,6 +56,8 @@ python -m scripts.download_models --output-dir ./car_quality_estimator/models
 
 `data_preprocessing.ipynb` provides a pipeline for processing generated Trellis viewpoints so that they can be compared to Ground Truth evaluation data. It includes functionalities for Background Removal, Equal Scaling and Visualization. It also includes methods to align the images in the folders. Front View Detection detects the front view of a car in a folder of car images and enables aligning the viewpoints.
 
+`data_3d_preprocessing.ipynb` provides a similar pipeline for processing 3D data, including functionalities for mesh scale normalization, centering and alignment (see [metrics_3d](./metrics_3d/README.md)).
+
 ## Usage of general metrics
 
 Example usage of the metrics library can be found in `metrics.ipynb`.
@@ -91,3 +98,4 @@ print(scores)
 - Collection of 3D Quality Assessment Repositories: [3DQA Databases](https://github.com/zzc-1998/Point-cloud-quality-assessment)
 - Aesthetic Predictor used by TRELLIS: [improved-aesthetic-predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor)
 - Dataset and Classifier for classifying the quality of 3D vehicles: [MeshFleet](https://github.com/FeMa42/MeshFleet)
+- MeshMetrics library for mesh-based metrics: [MeshMetrics](https://github.com/gasperpodobnik/MeshMetrics) / [Mesh Metrics Paper](https://arxiv.org/abs/2410.02630)

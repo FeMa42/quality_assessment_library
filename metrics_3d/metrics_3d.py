@@ -4,6 +4,9 @@ from metrics_3d.helpers import (
     trimesh_to_vtk,
     safe_load_trimesh,
     estimate_volume_from_points,
+    align_mesh,
+    scale_mesh,
+    CorruptedMeshError,
 )
 from tqdm.auto import tqdm
 import numpy as np
@@ -30,16 +33,29 @@ class Metrics3D:
         biou_tau=1.0,
         hd_percentile=95.0,
         pc_n_samples=10000,
+        pc_n_sample_ratio_expensive=0.1,
+        align=False,
+        alignment_method="xy_plane_shortest_axis",  # or "longest_dimension"
+        alignment_axis=0,
+        normalize_mesh_scale=False,
+        normalizing_method="largest_oriented_dimension",  # or "largest_dimension"
+        norm_scale=1.0,  # Scale factor for normalization
     ):
-        # Default to all MeshMetrics metrics if not specified
         self.metric_fr_list = metric_fr_list or None
-        self.metric_nr_list = metric_nr_list or None  # or ["MM_PCQA"]
+        self.metric_nr_list = metric_nr_list or None
         self.metric_fr_pc_list = metric_fr_pc_list or None
         self.spacing = spacing
         self.nsd_tau = nsd_tau
         self.biou_tau = biou_tau
         self.hd_percentile = hd_percentile
         self.pc_n_samples = pc_n_samples
+        self.pc_n_sample_ratio_expensive = pc_n_sample_ratio_expensive
+        self.align = align
+        self.alignment_method = alignment_method
+        self.alignment_axis = alignment_axis
+        self.normalize_mesh_scale = normalize_mesh_scale
+        self.normalizing_method = normalizing_method
+        self.norm_scale = norm_scale
 
         self.available_metrics = {
             # full reference metrics:
@@ -69,6 +85,8 @@ class Metrics3D:
     ]:
         """
         Load and convert meshes to vtkPolyData for distance metrics computation.
+        Applies preprocessing such as watertightness checks and mesh alignment if specified as well as normalization of mesh scale.
+
         Args:
             pred_mesh_path (str): Path to the predicted mesh file.
             gt_mesh_path (str): Path to the ground truth mesh file.
@@ -76,20 +94,50 @@ class Metrics3D:
             tuple: A tuple containing the ground truth and predicted meshes as vtkPolyData and Trimesh, as well as a boolean depicting watertightness.
         """
         watertight = True
-        pred_trimesh = safe_load_trimesh(pred_mesh_path, logging=logging)
+
+        # Safe load meshes using trimesh
+        try:
+            pred_trimesh = safe_load_trimesh(pred_mesh_path, logging=logging)
+        except CorruptedMeshError as e:
+            if logging:
+                print(f"\t [Error] Predicted mesh corrupted: {e}")
+            raise  # Re-raise to be caught in compute_mesh_pair
         if not pred_trimesh.is_watertight:
-            if logging:
-                print(
-                    f"\t [Warning] {pred_mesh_path}: Not watertight after trying to repair -> Only Point Cloud based Comparison possible."
-                )
             watertight = False
-        gt_trimesh = safe_load_trimesh(gt_mesh_path, logging=logging)
+
+        try:
+            gt_trimesh = safe_load_trimesh(gt_mesh_path, logging=logging)
+        except CorruptedMeshError as e:
+            if logging:
+                print(f"\t [Error] Ground Truth mesh corrupted: {e}")
+            raise  # Re-raise to be caught in compute_mesh_pair
+
         if not gt_trimesh.is_watertight:
-            if logging:
-                print(
-                    f"\t [Warning] {gt_mesh_path}: Not watertight after trying to repair -> Only Point Cloud based Comparison possible."
-                )
             watertight = False
+
+        # rotate mesh to align to x-axis (0) or x-y plane if specified
+        if self.align:
+            pred_trimesh = align_mesh(
+                self.alignment_method, pred_trimesh, axis=self.alignment_axis
+            )
+            gt_trimesh = align_mesh(
+                self.alignment_method, gt_trimesh, axis=self.alignment_axis
+            )
+
+        # normalize mesh scale if specified
+        if self.normalize_mesh_scale:
+            pred_trimesh = scale_mesh(
+                self.normalizing_method,
+                pred_trimesh,
+                target_axis=self.alignment_axis,
+                target_size=self.norm_scale,
+            )
+            gt_trimesh = scale_mesh(
+                self.normalizing_method,
+                gt_trimesh,
+                target_axis=self.alignment_axis,
+                target_size=self.norm_scale,
+            )
 
         # Convert to vtkPolyData for mesh based distance metrics
         pred_vtk = trimesh_to_vtk(pred_trimesh)
@@ -114,82 +162,130 @@ class Metrics3D:
         results = {}
 
         # convert meshes to Trimesh and vtkPolyData
-        gt_vtk, pred_vtk, gt_trimesh, pred_trimesh, watertight = self._prepare(
-            pred_mesh_path, gt_mesh_path, logging=logging
-        )
+        try:
+            gt_vtk, pred_vtk, gt_trimesh, pred_trimesh, watertight = self._prepare(
+                pred_mesh_path, gt_mesh_path, logging=logging
+            )
 
-        # 1. Compute MeshMetrics (require watertight meshes)
-        if self.metric_fr_list:
-            if watertight:
-                dm = DistanceMetrics()
-                dm.set_input(gt_vtk, pred_vtk, spacing=self.spacing)
-
-                for name in self.metric_fr_list:
-                    if name in self.available_metrics:
-                        try:
-                            if name == "Hausdorff_Percentile":
-                                results[name] = self.available_metrics[name](
-                                    dm, percentile=self.hd_percentile
-                                )
-                            else:
-                                results[name] = self.available_metrics[name](dm)
-                        except Exception as e:
-                            results[name] = None
-                            if logging:
-                                tqdm.write(f"[Metrics3D] Error computing {name}: {e}")
-                            success = False
-            else:
-                # Set MeshMetrics to None if not watertight
-                for name in self.metric_fr_list:
-                    if name in self.available_metrics:
-                        results[name] = None
-                success = False
-
-        # 2. Compute Point Cloud metrics (works with any mesh)
-        if self.metric_fr_pc_list:
-            # Create point clouds from meshes using fixed seeds
-            np.random.seed(42)  # For reproducibility
-            pred_pc = pred_trimesh.sample(self.pc_n_samples)
-            np.random.seed(42)  # For reproducibility
-            gt_pc = gt_trimesh.sample(self.pc_n_samples)
-            np.random.seed(None)  # Reset seed
-
-            for name in self.metric_fr_pc_list:
-                if name in self.available_metrics:
+            # 1. Compute MeshMetrics (require watertight meshes)
+            if self.metric_fr_list:
+                if watertight:
                     try:
-                        if name == "Hausdorff_Percentile_PC":
-                            results[name] = self.available_metrics[name](
-                                pred_pc, gt_pc, percentile=self.hd_percentile
-                            )
-                        elif name == "Point_to_Surface_RMSE":
-                            results[name] = self.available_metrics[name](
-                                pred_trimesh, gt_trimesh
-                            )
-                        elif name == "Earth_Mover_Distance":
-                            results[name] = self.available_metrics[name](
-                                pred_trimesh, gt_trimesh
-                            )
-                        else:
-                            # Default Case for point cloud metrics
-                            results[name] = self.available_metrics[name](pred_pc, gt_pc)
-                    except Exception as e:
-                        results[name] = None
-                        if logging:
-                            tqdm.write(f"[Metrics3D] Error computing {name}: {e}")
-                        success = False
+                        dm = DistanceMetrics()
+                        dm.set_input(gt_vtk, pred_vtk, spacing=self.spacing)
 
-        # 3. Compute no-reference metrics TODO
-        if self.metric_nr_list:
+                        for name in self.metric_fr_list:
+                            if name in self.available_metrics:
+                                try:
+                                    if name == "Hausdorff_Percentile":
+                                        results[name] = self.available_metrics[name](
+                                            dm, percentile=self.hd_percentile
+                                        )
+                                    else:
+                                        results[name] = self.available_metrics[name](dm)
+                                except Exception as e:
+                                    results[name] = None
+                                    if logging:
+                                        tqdm.write(
+                                            f"[Metrics3D] Error computing {name}: {e}"
+                                        )
+                                    success = False
+                    except Exception as e:
+                        if logging:
+                            tqdm.write(
+                                f"\t [Error] MeshMetrics initialization failed: {e}"
+                            )
+                        # Fill all FR metrics with None
+                        for name in self.metric_fr_list:
+                            results[name] = None
+                        success = False
+                else:
+                    # Set MeshMetrics to None if not watertight
+                    for name in self.metric_fr_list:
+                        if name in self.available_metrics:
+                            results[name] = None
+                    success = False
+
+            # 2. Compute Point Cloud metrics (works with any mesh)
+            if self.metric_fr_pc_list:
+                try:
+                    # Create point clouds from meshes using fixed seeds
+                    np.random.seed(42)  # For reproducibility
+                    pred_pc = pred_trimesh.sample(self.pc_n_samples)
+                    np.random.seed(42)  # For reproducibility
+                    gt_pc = gt_trimesh.sample(self.pc_n_samples)
+                    np.random.seed(None)  # Reset seed
+
+                    for name in self.metric_fr_pc_list:
+                        if name in self.available_metrics:
+                            try:
+                                if name == "Hausdorff_Percentile_PC":
+                                    results[name] = self.available_metrics[name](
+                                        pred_pc, gt_pc, percentile=self.hd_percentile
+                                    )
+                                elif name == "Point_to_Surface_RMSE":
+                                    results[name] = self.available_metrics[name](
+                                        pred_trimesh, gt_trimesh
+                                    )
+                                elif name == "Earth_Mover_Distance":
+                                    results[name] = self.available_metrics[name](
+                                        pred_trimesh, gt_trimesh
+                                    )
+                                else:
+                                    # Default Case for point cloud metrics
+                                    results[name] = self.available_metrics[name](
+                                        pred_pc, gt_pc
+                                    )
+                            except Exception as e:
+                                results[name] = None
+                                if logging:
+                                    tqdm.write(
+                                        f"[Metrics3D] Error computing {name}: {e}"
+                                    )
+                                success = False
+                except Exception as e:
+                    if logging:
+                        tqdm.write(f"\t [Error] Point Cloud sampling failed: {e}")
+                    # Fill all PC metrics with None
+                    for name in self.metric_fr_pc_list:
+                        results[name] = None
+                    success = False
+
+            # 3. Compute no-reference metrics TODO
+            if self.metric_nr_list:
+                if logging:
+                    tqdm.write(
+                        "[Metrics3D] No Reference Metrics currently not implemented"
+                    )
+                for name in self.metric_nr_list:
+                    if name in self.available_metrics:
+                        results[name] = None
+
+        except (CorruptedMeshError, Exception) as e:
             if logging:
-                tqdm.write("[Metrics3D] No Reference Metrics currently not implemented")
-            for name in self.metric_nr_list:
-                if name in self.available_metrics:
+                print(f"\t [SKIPPED] Corrupted mesh detected: {e}")
+
+            # Return empty results with failure flag
+            success = False
+
+            # Fill results with None values for all expected metrics
+            if self.metric_fr_list:
+                for name in self.metric_fr_list:
+                    results[name] = None
+
+            if self.metric_fr_pc_list:
+                for name in self.metric_fr_pc_list:
+                    results[name] = None
+
+            if self.metric_nr_list:
+                for name in self.metric_nr_list:
                     results[name] = None
 
         return results, success
 
     def compute_no_reference_metrics(self, mesh_path: str) -> tuple:
         """
+        NOT IMPLEMENTED YET.
         Compute no-reference metrics for a single mesh.
         Args:
             mesh_path (str): Path to the mesh file.
@@ -215,7 +311,10 @@ class Metrics3D:
                     success = False
         return results, success
 
-    # Metrics3D methods for each metric
+    ################################################################
+    ################ Mesh Metric Functions #########################
+    ################################################################
+
     def _hausdorff(self, dm: DistanceMetrics) -> float:
         """
         Hausdorff Distance (MeshMetrics)
@@ -300,7 +399,10 @@ class Metrics3D:
         """
         return dm.biou(tau=self.biou_tau)
 
-    # Point Cloud metric implementations
+    ################################################################
+    ################ Point Cloud Functions #########################
+    ################################################################
+
     def _chamfer_distance(
         self, pred: Tuple[float, int], gt: Tuple[float, int]
     ) -> float:
@@ -415,7 +517,9 @@ class Metrics3D:
             float: Root Mean Square Error (RMSE) of the distances from predicted points to the nearest point on the ground truth surface.
         """
         np.random.seed(42)  # For reproducibility
-        pred_pc = pred.sample(self.pc_n_samples)
+        pred_pc = pred.sample(
+            int(self.pc_n_samples * self.pc_n_sample_ratio_expensive)
+        )  # Smaller Sample Size for RMSE
         np.random.seed(None)  # Reset seed
         # distances = []
         # for point in pred_pc:
@@ -456,7 +560,7 @@ class Metrics3D:
             # Sample equal numbers of points
             np.random.seed(42)  # For reproducibility
             pred_pc = pred.sample(
-                int(self.pc_n_samples / 10)
+                int(self.pc_n_samples * self.pc_n_sample_ratio_expensive)
             )  # Smaller Sample Size for EMD
             np.random.seed(42)  # For reproducibility
             gt_pc = gt.sample(len(pred_pc))
@@ -587,9 +691,13 @@ class Metrics3D:
         except Exception:
             return -1.0  # Error indicator
 
-    # No Reference Metrics (nr)
+    ################################################################
+    ################ No Reference Metric Functions #################
+    ################################################################
+
     def _MM_PCQA(self, mesh_path: str) -> float:
         """
+        NOT IMPLEMENTED YET.
         MM_PCQA
         - Placeholder for MM_PCQA metric, which is not implemented in this class.
         - This method can be extended to include the MM_PCQA metric if needed.
@@ -600,6 +708,9 @@ class Metrics3D:
         raise NotImplementedError("MM_PCQA metric is not implemented in Metrics3D.")
 
 
+################################################################
+################ Folder Processing Functions ###################
+################################################################
 def process_mesh_folder_fr(
     gt_folder: str, pred_folder: str, metric_class: Metrics3D, logging=True
 ) -> dict:
@@ -644,6 +755,7 @@ def process_mesh_folder_nr(
     mesh_folder: str, metric_class: Metrics3D, logging=True
 ) -> dict:
     """
+    NOT IMPLEMENTED YET.
     Process a folder of meshes, computing NO REFERENCE metrics for each mesh.
     Currently supports obj/glb/ply/stl files.
     Args:

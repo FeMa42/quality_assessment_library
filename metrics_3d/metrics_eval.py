@@ -27,6 +27,20 @@ def process_3d_metrics(
     metrics_3d_nsd_tau = metrics_3d_cfg.get("nsd_tau", 1.0)
     metrics_3d_biou_tau = metrics_3d_cfg.get("biou_tau", 1.0)
     metrics_3d_hd_percentile = metrics_3d_cfg.get("hd_percentile", 95.0)
+    metrics_3d_samples = metrics_3d_cfg.get("pc_n_samples", 10000)
+    metrics_3d_pc_sample_ratio_expensive = metrics_3d_cfg.get(
+        "pc_sample_ratio_expensive", 0.1
+    )
+    metrics_3d_align = metrics_3d_cfg.get("align", False)
+    metrics_3d_alignment_method = metrics_3d_cfg.get(
+        "alignment_method", "xy_plane_shortest_axis"
+    )
+    metrics_3d_alignment_axis = metrics_3d_cfg.get(
+        "alignment_axis", 0
+    )  # Default to 0 if not specified
+    metrics_3d_normalize_mesh_scale = metrics_3d_cfg.get("normalize_mesh_scale", False)
+    metrics_3d_normalizing_method = metrics_3d_cfg.get("normalizing_method", "max")
+    metrics_3d_norm_scale = metrics_3d_cfg.get("norm_scale", 1.0)
 
     if not metrics_3d_enabled:
         raise ValueError("3D metrics are not enabled in the config.")
@@ -40,6 +54,14 @@ def process_3d_metrics(
         nsd_tau=metrics_3d_nsd_tau,
         biou_tau=metrics_3d_biou_tau,
         hd_percentile=metrics_3d_hd_percentile,
+        pc_n_samples=metrics_3d_samples,
+        pc_n_sample_ratio_expensive=metrics_3d_pc_sample_ratio_expensive,
+        align=metrics_3d_align,
+        alignment_method=metrics_3d_alignment_method,
+        alignment_axis=metrics_3d_alignment_axis,
+        normalize_mesh_scale=metrics_3d_normalize_mesh_scale,
+        normalizing_method=metrics_3d_normalizing_method,
+        norm_scale=metrics_3d_norm_scale,
     )
 
     # Compute full reference metrics for all mesh pairs
@@ -77,7 +99,7 @@ def process_3d_metrics(
         overall = {}
 
     results = {
-        "per_object": results_per_object,
         "overall_3d_metrics": overall,
+        "per_object": results_per_object,
     }
     return results

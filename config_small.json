@@ -58,15 +58,11 @@
       "Chamfer_Distance",
       "Hausdorff_PC",
       "Hausdorff_Percentile_PC",
-      "Point_to_Surface_RMSE",
-      "Earth_Mover_Distance",
       "Convex_Hull_Volume_Difference",
       "Bounding_Box_Volume_Difference",
       "Point_Density_Volume_Difference"
     ],
-    "nr_metrics": [
-      "MMPCQA"
-    ],
+    "nr_metrics": [],
     "spacing": [
       1.0,
       1.0,
@@ -75,6 +71,13 @@
     "nsd_tau": 1.0,
     "biou_tau": 1.0,
     "Hausdorff_Percentile": 95,
-    "pc_n_samples": 100000
+    "pc_n_samples": 10000,
+    "pc_sample_ratio_expensive": 0.1,
+    "align": false,
+    "alignment_method": "xy_plane_shortest_axis",
+    "alignment_axis": 0,
+    "normalize_mesh_scale": false,
+    "normalize_method": "largest_oriented_dimension",
+    "norm_scale": 1.0
   }
 }
