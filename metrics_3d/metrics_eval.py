@@ -39,7 +39,9 @@ def process_3d_metrics(
         "alignment_axis", 0
     )  # Default to 0 if not specified
     metrics_3d_normalize_mesh_scale = metrics_3d_cfg.get("normalize_mesh_scale", False)
-    metrics_3d_normalizing_method = metrics_3d_cfg.get("normalizing_method", "max")
+    metrics_3d_normalize_method = metrics_3d_cfg.get(
+        "normalize_method", "largest_dimension"
+    )
     metrics_3d_norm_scale = metrics_3d_cfg.get("norm_scale", 1.0)
 
     if not metrics_3d_enabled:
@@ -60,7 +62,7 @@ def process_3d_metrics(
         alignment_method=metrics_3d_alignment_method,
         alignment_axis=metrics_3d_alignment_axis,
         normalize_mesh_scale=metrics_3d_normalize_mesh_scale,
-        normalizing_method=metrics_3d_normalizing_method,
+        normalize_method=metrics_3d_normalize_method,
         norm_scale=metrics_3d_norm_scale,
     )
 

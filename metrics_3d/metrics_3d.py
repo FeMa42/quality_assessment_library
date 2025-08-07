@@ -38,7 +38,7 @@ class Metrics3D:
         alignment_method="xy_plane_shortest_axis",  # or "longest_dimension"
         alignment_axis=0,
         normalize_mesh_scale=False,
-        normalizing_method="largest_oriented_dimension",  # or "largest_dimension"
+        normalize_method="largest_dimension",  # or "largest_dimension"
         norm_scale=1.0,  # Scale factor for normalization
     ):
         self.metric_fr_list = metric_fr_list or None
@@ -54,7 +54,7 @@ class Metrics3D:
         self.alignment_method = alignment_method
         self.alignment_axis = alignment_axis
         self.normalize_mesh_scale = normalize_mesh_scale
-        self.normalizing_method = normalizing_method
+        self.normalize_method = normalize_method
         self.norm_scale = norm_scale
 
         self.available_metrics = {
@@ -127,13 +127,13 @@ class Metrics3D:
         # normalize mesh scale if specified
         if self.normalize_mesh_scale:
             pred_trimesh = scale_mesh(
-                self.normalizing_method,
+                self.normalize_method,
                 pred_trimesh,
                 target_axis=self.alignment_axis,
                 target_size=self.norm_scale,
             )
             gt_trimesh = scale_mesh(
-                self.normalizing_method,
+                self.normalize_method,
                 gt_trimesh,
                 target_axis=self.alignment_axis,
                 target_size=self.norm_scale,

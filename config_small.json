@@ -77,7 +77,7 @@
     "alignment_method": "xy_plane_shortest_axis",
     "alignment_axis": 0,
     "normalize_mesh_scale": false,
-    "normalize_method": "largest_oriented_dimension",
+    "normalize_method": "largest_dimension",
     "norm_scale": 1.0
   }
 }

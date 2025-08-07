@@ -179,7 +179,7 @@ def align_mesh(
 
 
 def scale_mesh(
-    normalizing_method: str,
+    normalize_method: str,
     mesh: trimesh.Trimesh,
     target_size: float = 1.0,
     target_axis: int = 0,
@@ -192,13 +192,13 @@ def scale_mesh(
     Returns:
         trimesh.Trimesh: Scaled mesh.
     """
-    if normalizing_method == "largest_oriented_dimension":
+    if normalize_method == "largest_oriented_dimension":
         # Scale to unit length along largest dimension of the rotated bounding box
         mesh = scale_by_largest_oriented_dimension(mesh, target_size=target_size)
-    elif normalizing_method == "largest_dimension":
+    elif normalize_method == "largest_dimension":
         # Scale to unit length along largest dimension
         mesh = scale_by_largest_dimension(mesh, target_size=target_size)
-    elif normalizing_method == "axis":
+    elif normalize_method == "axis":
         mesh = scale_by_axis(mesh, axis=target_axis, target_size=target_size)
     else:
         # No scaling applied
