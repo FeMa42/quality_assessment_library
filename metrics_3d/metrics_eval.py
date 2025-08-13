@@ -2,7 +2,7 @@ import json
 from metrics_3d.metrics_3d import (
     Metrics3D,
     process_mesh_folder_fr,
-    process_mesh_folder_nr,
+    # process_mesh_folder_nr,
 )
 
 
@@ -43,6 +43,9 @@ def process_3d_metrics(
         "normalize_method", "largest_dimension"
     )
     metrics_3d_norm_scale = metrics_3d_cfg.get("norm_scale", 1.0)
+    metrics_3d_visualize_mesh_alignment = metrics_3d_cfg.get(
+        "visualize_mesh_alignment", False
+    )
 
     if not metrics_3d_enabled:
         raise ValueError("3D metrics are not enabled in the config.")
@@ -64,6 +67,7 @@ def process_3d_metrics(
         normalize_mesh_scale=metrics_3d_normalize_mesh_scale,
         normalize_method=metrics_3d_normalize_method,
         norm_scale=metrics_3d_norm_scale,
+        visualize_mesh_alignment=metrics_3d_visualize_mesh_alignment,
     )
 
     # Compute full reference metrics for all mesh pairs

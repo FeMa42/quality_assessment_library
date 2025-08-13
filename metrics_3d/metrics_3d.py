@@ -5,7 +5,9 @@ from metrics_3d.helpers import (
     safe_load_trimesh,
     estimate_volume_from_points,
     align_mesh,
+    align_with_eachother_overlap,
     scale_mesh,
+    center_mesh,
     CorruptedMeshError,
 )
 from tqdm.auto import tqdm
@@ -16,6 +18,7 @@ from scipy.spatial import ConvexHull
 import trimesh
 import vtk
 from typing import Tuple
+from pathlib import Path
 
 
 class Metrics3D:
@@ -40,6 +43,7 @@ class Metrics3D:
         normalize_mesh_scale=False,
         normalize_method="largest_dimension",  # or "largest_dimension"
         norm_scale=1.0,  # Scale factor for normalization
+        visualize_mesh_alignment=False,
     ):
         self.metric_fr_list = metric_fr_list or None
         self.metric_nr_list = metric_nr_list or None
@@ -56,6 +60,7 @@ class Metrics3D:
         self.normalize_mesh_scale = normalize_mesh_scale
         self.normalize_method = normalize_method
         self.norm_scale = norm_scale
+        self.visualize_mesh_alignment = visualize_mesh_alignment
 
         self.available_metrics = {
             # full reference metrics:
@@ -115,15 +120,6 @@ class Metrics3D:
         if not gt_trimesh.is_watertight:
             watertight = False
 
-        # rotate mesh to align to x-axis (0) or x-y plane if specified
-        if self.align:
-            pred_trimesh = align_mesh(
-                self.alignment_method, pred_trimesh, axis=self.alignment_axis
-            )
-            gt_trimesh = align_mesh(
-                self.alignment_method, gt_trimesh, axis=self.alignment_axis
-            )
-
         # normalize mesh scale if specified
         if self.normalize_mesh_scale:
             pred_trimesh = scale_mesh(
@@ -138,6 +134,29 @@ class Metrics3D:
                 target_axis=self.alignment_axis,
                 target_size=self.norm_scale,
             )
+
+        # pred_trimesh = center_mesh(pred_trimesh)
+        # gt_trimesh = center_mesh(gt_trimesh)
+
+        # rotate mesh to align to x-axis (0) or x-y plane if specified or just to overlap
+        if self.align:
+            if self.alignment_method == "overlap":
+                gt_trimesh, pred_trimesh, T = align_with_eachother_overlap(
+                    gt_trimesh, pred_trimesh
+                )
+            else:
+                pred_trimesh = align_mesh(
+                    self.alignment_method, pred_trimesh, axis=self.alignment_axis
+                )
+                gt_trimesh = align_mesh(
+                    self.alignment_method, gt_trimesh, axis=self.alignment_axis
+                )
+
+        # save both models in one scene and export to the root directory for debugging purposes of mesh alignment
+        # meshes don't align -> metrics may be inaccurate:
+        if self.visualize_mesh_alignment:
+            scene = trimesh.Scene([pred_trimesh, gt_trimesh])
+            scene.export(f"combined_scene_{Path(pred_mesh_path).stem}.glb")
 
         # Convert to vtkPolyData for mesh based distance metrics
         pred_vtk = trimesh_to_vtk(pred_trimesh)

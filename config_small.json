@@ -74,10 +74,11 @@
     "pc_n_samples": 10000,
     "pc_sample_ratio_expensive": 0.1,
     "align": false,
-    "alignment_method": "xy_plane_shortest_axis",
+    "alignment_method": "overlap",
     "alignment_axis": 0,
-    "normalize_mesh_scale": false,
+    "normalize_mesh_scale": true,
     "normalize_method": "largest_dimension",
-    "norm_scale": 1.0
+    "norm_scale": 1.0,
+    "visualize_mesh_alignment": false
   }
 }

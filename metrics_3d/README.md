@@ -81,10 +81,10 @@ Create a `config.json` file with the following structure for 3D metrics:
     "pc_sample_ratio_expensive": 0.1,
 
     "align": false,
-    "alignment_method": "xy_plane_shortest_axis",
+    "alignment_method": "overlap",
     "alignment_axis": 0,
-    "normalize_mesh_scale": false,
-    "normalize_method": "largest_oriented_dimension",
+    "normalize_mesh_scale": true,
+    "normalize_method": "largest_dimension",
     "norm_scale": 1.0
   }
 }
@@ -105,15 +105,16 @@ Create a `config.json` file with the following structure for 3D metrics:
 | `pc_n_samples` | int | `10000` | Number of points to sample for point cloud metrics |
 | `pc_n_sample_ratio_expensive` | float | `0.1` | Ratio of points to sample for expensive metrics like EMD and RMSE (compared to pc_n_samples) |
 | `align` | bool | `false` | Apply mesh alignment "postprocessing" |
-| `alignment_method` | string | `"xy_plane_shortest_axis"` | Method for mesh alignment |
+| `alignment_method` | string | `"overlap"` | Method for mesh alignment |
 | `alignment_axis` | int | `0` | Axis to align to, if the method is not plane based (0 for x-axis, 1 for y-axis, 2 for z-axis) |
-| `normalize_mesh_scale` | bool | `false` | Apply mesh scaling "postprocessing" |
-| `normalize_method` | string | `"largest_oriented_dimension"` | Method for mesh scaling |
+| `normalize_mesh_scale` | bool | `true` | Apply mesh scaling "postprocessing" |
+| `normalize_method` | string | `"largest_dimension"` | Method for mesh scaling |
 | `norm_scale` | float | `1.0` | Size of the unit cube to scale meshes to |
 
 ### Alignment Methods
 
-By default the calculated axis is aligned to the global x-axis or the xy-plane depending on the method used.
+By default both the reference and the ground truth objects are aligned to have the biggest overlap possible. This works great for our use case of car models, but might most definetely not work on other kinds of models.
+For other cases it is might be better to align the calculated axis to the global x-axis or the xy-plane depending on the method used.
 This can be changed by providing an axis value in the `alignment_axis` parameter.
 0 for x-axis, 1 for y-axis, and 2 for z-axis.
 
@@ -121,6 +122,7 @@ This can be changed by providing an axis value in the `alignment_axis` parameter
 
 Automatic alignment will NOT work for all meshes as well as for the meshes we tested it on (mainly cars) -> always check the results visually and try different methods if needed!
 
+- `"overlap"` - Align both models to maximize overlap
 - `"longest_dimension"` - Align to longest axis-aligned dimension
 - `"pca"` - Align using Principal Component Analysis
 - `"longest_oriented_dimension"` - Align to longest oriented bounding box dimension
@@ -243,6 +245,8 @@ Lower values indicate more similar volumes
 The `preprocessing_3d` module provides tools for standardizing meshes before the generation process.
 All available preprocessing methods are explained in more detail in the [configuration parameters](#configuration-parameters) section under ``Alignment Methods`` and ``Normalization Methods``.
 The file itself is referenced [here](./preprocessing_3d.py).
+
+**⚠️** `overlap` can not be used for alignment in at the preprocessing stage, as there have to be two meshes to compare and overlap.
 
 ### Basic Preprocessing
 
