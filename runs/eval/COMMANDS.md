@@ -101,18 +101,31 @@ The SS-flow checkpoint paths (100k-step finetuned) are:
 elevation 90) to `glb_<sha>/`, NOT `gaussian_<sha>/`. The eval expects flat
 `<sha>/000.png..011.png`. The assembly step must rename/copy:
 
+The eval matches GT↔gen **by viewpoint filename**, so the gen frames MUST be
+named `000.png`..`011.png` in sorted view order. `evaluate_trellis_prompt_following.py`
+writes the QA-spec frames either directly in `glb_<sha>/` or in a nested
+`glb_<sha>/renders/` subdir (and they may not already be zero-padded), so source
+from whichever exists and rename in sorted order:
+
 ```bash
-# For each object sha in the output_dir:
+# For each object sha in the output_dir, copy QA-spec frames -> <sha>/000.png..011.png
 for d in <output_dir>/glb_*/; do
-    sha="${d##*/glb_}"
-    sha="${sha%/}"
-    mkdir -p data/ablation/gen/<variant>/"$sha"
-    cp "$d"*.png data/ablation/gen/<variant>/"$sha"/
+    sha="${d##*/glb_}"; sha="${sha%/}"
+    src="$d"; [ -d "${d}renders" ] && src="${d}renders"     # frames may be nested under renders/
+    out="data/ablation/gen/<variant>/$sha"; mkdir -p "$out"
+    i=0
+    for f in $(ls "$src"/*.png | sort); do
+        printf -v name "%03d.png" "$i"
+        cp "$f" "$out/$name"; i=$((i+1))
+    done
 done
 ```
 
-Alternatively use `prepare_meshfleet_benchmark.ipynb` (cells ~915–940) which
-handles the copy/rename for the existing pipeline.
+Do NOT use `gaussian_<sha>/` (radius 2, fov 40 — non-QA-spec camera). Alternatively
+use `render_for_quality_assessment.py` (which already writes `{i:03d}.png` at the
+QA-spec camera) or `prepare_meshfleet_benchmark.ipynb` (cells ~915–940), which
+handle the copy/rename for the existing pipeline. The per-variant P0/P1/P2 assembly
+blocks below should follow this same sorted-rename pattern.
 
 ---
 

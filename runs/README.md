@@ -93,10 +93,10 @@ the CarCaption3K-1620 ablation:
 ### Training configs
 - `ai-toolkit/config/flux_trellis_carcaption3k_1620.yaml` — FLUX LoRA training config
 - `TRELLIS/dataset_toolkits/datasets/CarCaption3K1620.py` — TRELLIS dataset class
-- `TRELLIS/configs/generation/slat_flow_txt_dit_XL_64l8p2_fp16_finetune_cc1620.json` — TRELLIS SLAT-txt CC1620 config
-- `TRELLIS/configs/generation/ss_flow_txt_dit_XL_16l8_fp16_finetune_cc1620.json` — TRELLIS SS-txt CC1620 config
-- `TRELLIS/configs/generation/slat_flow_img_dit_L_64l8p2_fp16_finetune_cc1620.json` — TRELLIS SLAT-img CC1620 config
-- `TRELLIS/configs/generation/ss_flow_img_dit_L_16l8_fp16_finetune_cc1620.json` — TRELLIS SS-img CC1620 config
+- `TRELLIS/configs/generation/slat_flow_txt_dit_XL_64l8p2_fp16_carcaption3k_1620.json` — TRELLIS SLAT-txt CC1620 config
+- `TRELLIS/configs/generation/ss_flow_txt_dit_XL_16l8_fp16_carcaption3k_1620.json` — TRELLIS SS-txt CC1620 config
+- `TRELLIS/configs/generation/slat_flow_img_dit_L_64l8p2_fp16_carcaption3k_1620.json` — TRELLIS SLAT-img CC1620 config
+- `TRELLIS/configs/generation/ss_flow_img_dit_L_16l8_fp16_carcaption3k_1620.json` — TRELLIS SS-img CC1620 config
 
 ### Run provenance
 - `runs/reference_budgets.json` — recovered MeshFleet budgets (Phase 0)
