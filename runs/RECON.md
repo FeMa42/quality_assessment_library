@@ -206,3 +206,51 @@ assembled by `$TRELLIS/prepare_meshfleet_benchmark.ipynb`.
 3. **num_gpus not recorded in any TRELLIS run** (train.py default -1 = all GPUs).
    To reproduce wall-clock-comparable budgets, a later phase must decide a fixed
    GPU count; step counts (recorded above) are the reproducible budget anchor.
+
+---
+
+## Ready to launch
+
+Gate run: 2026-06-04 (`scripts/validate_ablation_ready.py`).
+
+```json
+{
+  "ready": true,
+  "problems": []
+}
+```
+
+**Gate passed cleanly.** Manifest is 1620 rows with unique SHA256s and all
+asset paths present. Held-out GT folder has exactly 232 object directories.
+Manifest hash `53d8402e...` copied to all three per-variant run dirs
+(`runs/flux_carcaption3k_1620/`, `runs/trellis_txt_cc1620/`,
+`runs/trellis_img_cc1620/`).
+
+### What is prepped (CPU / scripted — done)
+- Locked manifest: `manifests/carcaption3k_1620_locked.csv` (1620 rows)
+- Manifest hash + provenance: `manifests/carcaption3k_1620_locked.sha256` + `_summary.json`
+- TRELLIS dataset class: `TRELLIS/dataset_toolkits/datasets/CarCaption3K1620.py`
+- TRELLIS data-prep commands: `runs/trellis_prep/COMMANDS.md` (smoke-tested on 4 objects)
+- Generate → eval command templates: `runs/eval/COMMANDS.md` (P0/P1/P2)
+- Run-log scaffolding: `runs/README.md` (per-run artifact contract + deliverables index)
+- Per-variant manifest provenance: `runs/*/manifest_sha256.txt` (3 files, all hash `53d8402e...`)
+- Pre-launch sanity gate: `scripts/validate_ablation_ready.py` + `tests/ablations/test_validate.py`
+
+### What remains (requires GPU / human action)
+1. **ENV fix** — fix `trellis_local` before running TRELLIS data prep
+   (see `runs/trellis_prep/COMMANDS.md` §"CRITICAL — environment caveat")
+2. **TRELLIS data prep** — render + voxelize + encode latents for 1420 train + 200 val objects
+3. **FLUX LoRA finetune** — 8000 steps, rank 32 (`flux_carcaption3k_1620_lora32`)
+4. **4x TRELLIS finetunes** — SLAT-txt 100k, SS-txt 100k, SLAT-img 30k, SS-img 100k steps
+5. **Generation P0** — FLUX_TRELLIS_CC1620 (needs OI-1: pin LoRA path)
+6. **Generation P1** — TRELLIS_TXT_CC1620 (needs OI-2: add `--ss_flow_checkpoint_path`)
+7. **Generation P2** — TRELLIS_IMG_CC1620 (needs OI-1 + OI-2)
+8. **Assembly + Eval** — glb_<sha> rename (OI-3) + `run_meshfleet_eval.py` for each variant
+
+### Open items
+| ID  | Affects | Status |
+| --- | ------- | ------ |
+| OI-1 | P0, P2 | OPEN — pin FLUX LoRA to newly-trained `flux_carcaption3k_1620_lora32` in `evaluate_trellis_prompt_following.py` line 80 |
+| OI-2 | P1, P2 | OPEN — add `--ss_flow_checkpoint_path` arg to generation script; handle `.pt` loader |
+| OI-3 | All    | OPEN — assembly must use `glb_<sha>/` (QA-spec, radius 1.5) not `gaussian_<sha>/` |
+| ENV  | Data prep | OPEN — fix `trellis_local` env (numpy 1.26.4, open3d 0.19.0, correct utils3d) |
