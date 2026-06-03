@@ -22,8 +22,9 @@
   - `BLENDER=/home/damian/Projects/Diffus3D/blender-3.2.2-linux-x64/blender`
 - **Sampling pool:** `$CCD/car_meshes_trellis_aesthetics_65` (aesthetic≥0.65, ≈2,648 meshes).
 - **Captions/previews:** `$CCD/CarCaptionData_ai_toolkit/<sha>.txt` and `<sha>.png`.
+- **Python interpreter (QA scripts + ALL pytest):** `PY=/home/damian/miniconda3/envs/trellis_qa/bin/python` (Python 3.10; has pandas + pytest). Use `$PY script.py …` and `$PY -m pytest …`. **Do NOT use bare `python`/`python3` — they are not on PATH.** TRELLIS stage scripts / `train.py` (Phases 3–4) run under a TRELLIS conda env (e.g. `trellis_local` or `trellis2`) — confirm the exact one in Phase 3 Task 3.1 Step 1.
 - **Determinism:** seed `20260603` everywhere a random choice is made.
-- **Tests:** `python -m pytest tests/ablations/<file>::<test> -v`, run from `$QA`.
+- **Tests:** `$PY -m pytest tests/ablations/<file>::<test> -v`, run from `$QA`.
 - **Commit cadence:** commit after each task's tests pass. Branch: work on `meshflee_benchmark` (already checked out). Use `git add <listed files>` only — the working tree has unrelated changes; never `git add -A`.
 - **The agent does NOT launch GPU jobs.** Tasks that would run rendering/training/inference instead *emit* the exact command into `runs/<run_id>/COMMANDS.md` and stop.
 
