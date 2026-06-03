@@ -1,0 +1,28 @@
+{
+  "seed": 20260603,
+  "n": 1620,
+  "n_val": 200,
+  "counts": {
+    "pool_meshes": 2598,
+    "after_strict_filter": 2212,
+    "excluded": 386,
+    "selected": 1620,
+    "train": 1420,
+    "val": 200
+  },
+  "mesh_ext_breakdown": {
+    ".glb": 1154,
+    ".gltf": 76,
+    ".obj": 235,
+    ".fbx": 155,
+    ".blend": 0
+  },
+  "paths": {
+    "pool": "/home/damian/Projects/datasets/CarCaptionData/car_meshes_trellis_aesthetics_65",
+    "aitk": "/home/damian/Projects/datasets/CarCaptionData/CarCaptionData_ai_toolkit",
+    "renders": "/home/damian/Projects/datasets/CarCaptionData/CarCaptionData_renders",
+    "meshfleet_test": "data/meshfleet/meshfleet_test.csv"
+  },
+  "timestamp": "2026-06-03T22:39:56+02:00",
+  "manifest_sha256": "53d8402e17d619b0c2a35fb18f685311f41d09bd84d2072776fa7f7b179b299d"
+}
