@@ -17,16 +17,12 @@
 # CarCaption3K-1620 FLUX LoRA.  DEPENDS ON stage 30 (FLUX LoRA).
 # Based on $QA/runs/eval/COMMANDS.md (P0).
 #
-# !!! OPEN ITEMS — CONFIRM BEFORE RUNNING !!!
-#  * --prompt_file must be the 232 HELD-OUT objects' prompts (column
-#    refined_3d_prompt) in SHA ORDER. METADATA_CSV (meshfleet_test.csv) is the
-#    held-out set, but VERIFY its row order corresponds 1:1 to the held-out shas
-#    used by the assembly mapping below (see prepare_meshfleet_benchmark.ipynb).
-#  * OI-3 assembly i→sha mapping: evaluate_trellis_prompt_following.py writes
-#    glb_<sha>/ QA-spec frames; we copy them to <sha>/000.png..011.png in sorted
-#    view order. CONFIRM the glb_* dir name carries the sha (it does in the
-#    template) — if it carries a numeric index i instead, you must map i→sha via
-#    the prompt_file row order.
+# OI-3 RESOLVED: generation outputs are sha-keyed (sample_<sha>.glb). Assembly
+# stages those GLBs to <sha>/<sha>.glb and renders them at the GT camera with the
+# canonical render_for_quality_assessment.py (same renderer as all reference
+# methods: az 0..330 step30, elev 90, radius 1.5) -> <sha>/000.png..011.png. No
+# more glb_<sha>/renders copy/rename. The held-out 232-object prompt file is built
+# by scripts/build_heldout_prompt_file.py (commit / regenerate as needed).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -38,6 +34,7 @@ VARIANT="FLUX_TRELLIS_CC1620"
 RAW_OUT="$TRELLIS/eval_prompt_alignment/output_flux_cc1620"
 GEN_FOLDER="$QA/data/ablation/gen/$VARIANT"
 METRICS_OUT="$QA/runs/$VARIANT/metrics"
+PROMPT_FILE="$QA/manifests/meshfleet_heldout_232_prompts.csv"
 
 # ---- (1) Generation (ENV_GEN) -------------------------------------------
 activate "$ENV_GEN"
@@ -49,26 +46,18 @@ python evaluate_trellis_prompt_following.py \
     --sample_max_reward_image \
     --flux_lora_repo "$FLUX_LORA_REPO" \
     --flux_lora_weight_name "$FLUX_LORA_WEIGHT" \
-    --prompt_file "$METADATA_CSV" \
+    --prompt_file "$PROMPT_FILE" \
     --seed 3
 
-# ---- (2) Assembly: glb_<sha>/ → <sha>/000.png..011.png (OI-3) -------------
-# Use the QA-spec glb_<sha>/ renders (radius 1.5, elev 90). Source from the
-# nested renders/ subdir if present, else the glb_<sha>/ dir directly. Rename to
-# zero-padded sorted view order so the eval can match GT↔gen by filename.
-mkdir -p "$GEN_FOLDER"
-for d in "$RAW_OUT"/glb_*/; do
-    [ -d "$d" ] || continue
-    sha="${d##*/glb_}"; sha="${sha%/}"
-    src="$d"; [ -d "${d}renders" ] && src="${d}renders"
-    out="$GEN_FOLDER/$sha"; mkdir -p "$out"
-    i=0
-    for f in $(ls "$src"/*.png 2>/dev/null | sort); do
-        printf -v name "%03d.png" "$i"
-        cp "$f" "$out/$name"
-        i=$((i+1))
-    done
-done
+# ---- (2) Assembly: stage sample_<sha>.glb -> <sha>/<sha>.glb, then render at
+#         the GT camera to <sha>/000.png..011.png (canonical, OI-3 RESOLVED) ----
+# stage_generated_glbs.py is pure-python (fine in any env, incl. ENV_GEN);
+# render_for_quality_assessment.py needs the generation/blender env (ENV_GEN).
+python "$QA/scripts/stage_generated_glbs.py" \
+    --gen-dir "$RAW_OUT" --staging-dir "$RAW_OUT/_staging"
+cd "$TRELLIS" && python render_for_quality_assessment.py \
+    --input_dir "$RAW_OUT/_staging" --mesh_output_dir "$GEN_FOLDER"
+# -> $GEN_FOLDER/<sha>/000.png..011.png at the GT camera (az 0..330, elev 90, radius 1.5)
 
 # ---- (3) Eval (ENV_QA) ---------------------------------------------------
 activate "$ENV_QA"

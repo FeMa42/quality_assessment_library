@@ -20,9 +20,10 @@
 # finetune's ckpts/ dir. To use the EMA weights instead, switch the glob to
 # ema_step*.pt (or your trainer's EMA filename) — CONFIRM which is preferred.
 #
-# !!! OPEN ITEMS (same as P0) !!!
-#  * --prompt_file = the 232 held-out prompts in sha order (see prepare_meshfleet_benchmark.ipynb).
-#  * OI-3 assembly i→sha mapping (glb_<sha>/ → <sha>/000.png..011.png).
+# OI-3 RESOLVED (same as P0): generation outputs are sha-keyed (sample_<sha>.glb).
+# Assembly stages them to <sha>/<sha>.glb and renders at the GT camera with the
+# canonical render_for_quality_assessment.py -> <sha>/000.png..011.png. The
+# held-out 232-object prompt file is built by scripts/build_heldout_prompt_file.py.
 # ---------------------------------------------------------------------------
 set -euo pipefail
 
@@ -34,6 +35,7 @@ VARIANT="TRELLIS_TXT_CC1620"
 RAW_OUT="$TRELLIS/eval_prompt_alignment/output_trellis_txt_cc1620"
 GEN_FOLDER="$QA/data/ablation/gen/$VARIANT"
 METRICS_OUT="$QA/runs/$VARIANT/metrics"
+PROMPT_FILE="$QA/manifests/meshfleet_heldout_232_prompts.csv"
 
 SS_CKPT_DIR="$TRELLIS/outputs/carcaption3k_1620/ss_flow_txt_dit_XL_16l8_fp16/ckpts"
 SLAT_CKPT_DIR="$TRELLIS/outputs/carcaption3k_1620/slat_flow_txt_dit_XL_64l8p2_fp16/ckpts"
@@ -57,25 +59,20 @@ cd "$TRELLIS"
 
 python evaluate_trellis_prompt_following.py \
     --output_dir "$RAW_OUT" \
-    --prompt_file "$METADATA_CSV" \
+    --prompt_file "$PROMPT_FILE" \
     --seed 3 \
     --ss_flow_checkpoint_path "$SS_CKPT" \
     --slat_flow_checkpoint_path "$SLAT_CKPT"
 
-# ---- (2) Assembly: glb_<sha>/ → <sha>/000.png..011.png (OI-3) -------------
-mkdir -p "$GEN_FOLDER"
-for d in "$RAW_OUT"/glb_*/; do
-    [ -d "$d" ] || continue
-    sha="${d##*/glb_}"; sha="${sha%/}"
-    src="$d"; [ -d "${d}renders" ] && src="${d}renders"
-    out="$GEN_FOLDER/$sha"; mkdir -p "$out"
-    i=0
-    for f in $(ls "$src"/*.png 2>/dev/null | sort); do
-        printf -v name "%03d.png" "$i"
-        cp "$f" "$out/$name"
-        i=$((i+1))
-    done
-done
+# ---- (2) Assembly: stage sample_<sha>.glb -> <sha>/<sha>.glb, then render at
+#         the GT camera to <sha>/000.png..011.png (canonical, OI-3 RESOLVED) ----
+# stage_generated_glbs.py is pure-python (fine in any env, incl. ENV_GEN);
+# render_for_quality_assessment.py needs the generation/blender env (ENV_GEN).
+python "$QA/scripts/stage_generated_glbs.py" \
+    --gen-dir "$RAW_OUT" --staging-dir "$RAW_OUT/_staging"
+cd "$TRELLIS" && python render_for_quality_assessment.py \
+    --input_dir "$RAW_OUT/_staging" --mesh_output_dir "$GEN_FOLDER"
+# -> $GEN_FOLDER/<sha>/000.png..011.png at the GT camera (az 0..330, elev 90, radius 1.5)
 
 # ---- (3) Eval (ENV_QA) ---------------------------------------------------
 activate "$ENV_QA"
