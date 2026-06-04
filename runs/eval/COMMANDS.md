@@ -60,50 +60,49 @@ let the pipeline run all stages.
 
 ---
 
-## Open items (must resolve before generation)
+## Open items (status)
 
-### OI-1 · FLUX LoRA repo pin (MUST FIX before running P0/P2)
+All three OI code issues are now RESOLVED in code (TRELLIS commit `42c0875` for
+OI-1/OI-2; QA commit `12196ad` for OI-3). What remains are runtime confirmations
+(trained checkpoints/LoRA exist; env names) — captured in `slurm/ablation/env.sh`.
 
-`evaluate_trellis_prompt_following.py` line 80 hard-codes:
+### OI-1 · FLUX LoRA repo pin — RESOLVED (now a CLI arg)
 
-```python
-self.flux_pipe.load_lora_weights(
-    'DamianBoborzi/FLUX.1-schnell_meshleet',
-    weight_name='flux_schnell_meshfleet_lora32.safetensors')
+`evaluate_trellis_prompt_following.py` no longer hard-codes the LoRA. It exposes
+`--flux_lora_repo` and `--flux_lora_weight_name` (defaults preserve the old
+MeshFleet behavior). For the CarCaption ablation, pass the newly trained LoRA —
+the sbatch scripts already do this via `env.sh` (`FLUX_LORA_REPO` /
+`FLUX_LORA_WEIGHT`):
+
+```bash
+--flux_lora_repo "$FLUX_LORA_REPO" --flux_lora_weight_name "$FLUX_LORA_WEIGHT"
+# repo may be an HF id OR a local dir (e.g. ai-toolkit/output/flux_carcaption3k_1620_lora32)
 ```
 
-For the CarCaption3K-1620 ablation this **must** be changed to load from the
-newly trained LoRA repo (placeholder path — update when training is complete):
+**Action remaining:** after FLUX training, confirm the actual output repo/dir +
+weight filename and set them in `slurm/ablation/env.sh` (the training config
+`$AITK/config/flux_trellis_carcaption3k_1620.yaml` pushes to
+`DamianBoborzi/flux_carcaption3k_1620_lora32`).
 
-```python
-self.flux_pipe.load_lora_weights(
-    'ai-toolkit/output/flux_carcaption3k_1620_lora32',   # LOCAL path
-    weight_name='<weight_file>.safetensors')
-# OR if pushed to HF:
-# self.flux_pipe.load_lora_weights(
-#     'DamianBoborzi/flux_carcaption3k_1620_lora32',
-#     weight_name='flux_carcaption3k_1620_lora32.safetensors')
-```
+### OI-2 · ss_flow stage checkpoint loading — RESOLVED (now a CLI arg)
 
-The training config (`$AITK/config/train_lora_flux_schnell_32_3.yaml`) pushes
-to `DamianBoborzi/flux_schnell_MeshFleet_newPrompts_lora32_6`. Confirm the
-actual output location before generation.
+`evaluate_trellis_prompt_following.py` now accepts `--ss_flow_checkpoint_path`
+alongside `--slat_flow_checkpoint_path`. Both load via a format-aware, lenient
+helper (`.pt` *and* `.safetensors`; `strict=False`) into
+`pipeline.models['sparse_structure_flow_model']` and
+`pipeline.models['slat_flow_model']` respectively. Pass BOTH for P1/P2 to use the
+fully-finetuned (ss+slat) TRELLIS. The sbatch scripts auto-select the highest-step
+`denoiser_step*.pt` from each finetune's `ckpts/` dir.
 
-### OI-2 · ss_flow stage checkpoint loading (MUST FIX for P1/P2)
-
-The generation script currently only accepts `--slat_flow_checkpoint_path` for
-the SLAT denoiser (line 134). There is **no CLI flag** for the SS (sparse
-structure) flow checkpoint. To load both finetuned stages for CC1620, either:
-
-- Add `--ss_flow_checkpoint_path` to the script's argparser and a corresponding
-  `self.pipeline.models['ss_flow_model'].load_state_dict(...)` call (mirrors
-  the existing slat pattern), OR
-- Assemble a full finetuned pipeline folder (as `--finetuned_trellis_path`
-  expects `from_pretrained()`-compatible layout) containing both stage weights.
-
-The SS-flow checkpoint paths (100k-step finetuned) are:
+Reference SS-flow checkpoint paths (100k-step MeshFleet finetunes, for comparison):
 - txt: `$TRELLIS/outputs/sweeps_ss_flow_txt/sweep_wqt27r19_20250704_034000/ckpts/denoiser_step0100000.pt`
 - img: `$TRELLIS/outputs/sweeps_ss_flow_img/sweep_x3va3sda_20250705_011646/ckpts/denoiser_step0100000.pt`
+
+(For the CC1620 runs, use the checkpoints produced by `slurm/ablation/40–43`,
+i.e. `$TRELLIS/outputs/carcaption3k_1620/<stage>/ckpts/denoiser_step*.pt`.)
+
+**Action remaining:** none in code — just ensure the CC1620 finetune checkpoints
+exist before P1/P2 (the sbatch dependencies enforce this).
 
 ### OI-3 · GLB → QA-render assembly (RESOLVED)
 
