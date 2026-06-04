@@ -14,8 +14,9 @@ All scripts source [`env.sh`](./env.sh) and wrap the exact commands documented i
    known-good `trellis_printability` → `trellis1_cc1620` and applies verified
    fixes: numpy 1.26.4, open3d 0.17.0, opencv-headless 4.10.0.84, diffusers 0.31.0,
    lpips, ImageReward import patch). Already created here & verified 2026-06-04.
-2. Handle the FLUX *LoRA-training* env gap (stage 30, see caveats) and confirm the
-   env vars in `env.sh`.
+2. Build the FLUX-training env: `bash 00b_build_ai_toolkit_env.sh` (creates the
+   `ai_toolkit` conda env: torch 2.6.0+cu126 + ai-toolkit requirements + headless
+   opencv). Already created here & verified 2026-06-04. Confirm env vars in `env.sh`.
 3. Submit the whole DAG: `bash submit_all.sh`. It prints the job IDs + the
    dependency graph. Re-submit any 100k-step finetune if it hits the 72h wall
    (it resumes via `--ckpt latest`).
@@ -27,7 +28,7 @@ All scripts source [`env.sh`](./env.sh) and wrap the exact commands documented i
 | `ENV_TRELLIS_PREP` | `trellis1_cc1620` | data pipeline (built by `00_fix_trellis_env.sh`) |
 | `ENV_TRELLIS_TRAIN` | `trellis1_cc1620` | `train.py` finetuning |
 | `ENV_GEN` | `trellis1_cc1620` | generation; trellis + diffusers 0.31 + ImageReward + nvdiffrast (all verified) |
-| `ENV_FLUX` | `ai_toolkit` | FLUX LoRA **training** only; **NO such env on this cluster — create it or run on HPC** |
+| `ENV_FLUX` | `ai_toolkit` | FLUX LoRA **training** (stage 30); built by `00b_build_ai_toolkit_env.sh` (torch 2.6.0+cu126) |
 | `ENV_QA` | `trellis1_cc1620` | `run_meshfleet_eval.py` (working ImageReward + lpips) |
 | `QA` / `TRELLIS` / `AITK` | project roots | |
 | `FLUX_LORA_REPO` | `DamianBoborzi/flux_carcaption3k_1620_lora32` | **confirm post-training** |
@@ -51,13 +52,17 @@ editing the file.
   2.4's `infer_schema` rejects, breaking FluxPipeline AND ImageReward); the
   ImageReward `med.py` patch (transformers 4.57 moved `apply_chunking_to_forward`
   to `transformers.pytorch_utils`).
-- **ONE remaining gap — the FLUX *LoRA finetune* (stage 30).** There is no
-  `ai_toolkit` conda env on this cluster (conda env list: `trellis_local,
-  trellis2, trellis2_v2, trellis_qa, trellis_printability, hunyuan3d_local,
-  prusa_libs, trellis1_cc1620`). Create an `ai_toolkit` env **or** run the FLUX
-  finetune on the HPC per `ai-toolkit/start_finetune.slurm` (module load + proxy).
-  Note: FLUX *generation* (stage 50, via diffusers FluxPipeline) works in
-  `trellis1_cc1620`; only the LoRA *training* needs the ai-toolkit env.
+- **FLUX *LoRA finetune* env (stage 30) — RESOLVED.** The `ai_toolkit` conda env
+  (torch 2.6.0+cu126, diffusers@pinned, transformers 4.49, opencv-headless,
+  bitsandbytes, peft, optimum-quanto) was built & verified 2026-06-04 by
+  `00b_build_ai_toolkit_env.sh` (snapshot: `ai_toolkit_freeze.txt`; the one fix
+  over ai-toolkit's requirements.txt is swapping GUI opencv → headless to avoid a
+  missing `libGL.so.1`). `toolkit.job.get_job` imports and the config parses.
+  (HPC alternative: `ai-toolkit/start_finetune.slurm`.) FLUX *generation*
+  (stage 50) runs in `trellis1_cc1620`; only LoRA *training* uses `ai_toolkit`.
+- **Runtime note (stage 30):** the first FLUX run downloads FLUX.1-schnell
+  (~24GB, Apache-2.0, no token) + the training adapter to the HF cache, and needs
+  the (gitignored) dataset rebuilt via `$QA/scripts/build_flux_filtered_dataset.py`.
 
 ## Submit order + DAG
 
@@ -128,10 +133,10 @@ gen+eval (each gpu:1):
 - **EMA vs raw checkpoint.** The gen scripts use the raw `denoiser_step*.pt`. To
   use EMA weights, switch the glob to your trainer's EMA filename
   (e.g. `ema_step*.pt`). Confirm which is preferred.
-- **FLUX env / dataset.** Stage 30 needs an `ai_toolkit` env (missing here) and
-  the gitignored FLUX dataset at
-  `$QA/data/ablation/carcaption3k_1620_flux_train`, rebuildable via
-  `$QA/scripts/build_flux_filtered_dataset.py`.
+- **FLUX dataset (stage 30).** The `ai_toolkit` env is built (see above). Still
+  rebuild the gitignored FLUX dataset at
+  `$QA/data/ablation/carcaption3k_1620_flux_train` via
+  `$QA/scripts/build_flux_filtered_dataset.py` before launching stage 30.
 
 ## Files
 
@@ -139,7 +144,9 @@ gen+eval (each gpu:1):
 |------|---------|
 | `env.sh` | shared env vars + `activate()` helper (sourced by all) |
 | `00_fix_trellis_env.sh` | build `trellis1_cc1620` (clone `trellis_printability` + verified fixes); run by hand once |
-| `trellis1_cc1620_freeze.txt` | `pip freeze` snapshot of the verified working env |
+| `00b_build_ai_toolkit_env.sh` | build `ai_toolkit` env for the FLUX finetune (torch 2.6+cu126 + ai-toolkit reqs + headless opencv); run by hand once |
+| `trellis1_cc1620_freeze.txt` | `pip freeze` snapshot of the verified TRELLIS/eval env |
+| `ai_toolkit_freeze.txt` | `pip freeze` snapshot of the verified FLUX-training env |
 | `10_dataprep_train_render.sbatch` | train metadata + render (sharded 2 GPU) |
 | `11_dataprep_train_geom.sbatch` | voxelize → feature → ss_latent → latent |
 | `12_dataprep_train_cond.sbatch` | render_cond (sharded 2 GPU) |

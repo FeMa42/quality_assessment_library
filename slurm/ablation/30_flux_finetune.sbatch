@@ -18,19 +18,20 @@
 #    FLUX_LORA_REPO / FLUX_LORA_WEIGHT defaults in env.sh).
 # Standalone (does not depend on TRELLIS data prep).
 #
-# !!! IMPORTANT — ENV GAP !!!
-# There is NO `ai_toolkit` conda env on THIS cluster (verified via conda env
-# list). This job will FAIL until you either:
-#   (a) create an `ai_toolkit` env locally and set ENV_FLUX accordingly, OR
-#   (b) run the FLUX finetune on the HPC cluster instead, using
-#       ai-toolkit/start_finetune.slurm as the template (module load anaconda /
-#       cuda / cudnn / nccl + the HTTP(S) proxy). That template hardcodes the
-#       HPC paths and the epyc-gpu partition.
+# ENV: uses the `ai_toolkit` conda env (ENV_FLUX), built & verified 2026-06-04
+# by ./00b_build_ai_toolkit_env.sh (torch 2.6.0+cu126, diffusers@pinned,
+# transformers 4.49, opencv-python-headless, bitsandbytes, peft, optimum-quanto;
+# snapshot in ai_toolkit_freeze.txt). If the env is missing, run that script once.
+# (To run on the HPC instead, use ai-toolkit/start_finetune.slurm as the template:
+#  module load anaconda/cuda/cudnn/nccl + HTTP(S) proxy + epyc-gpu partition.)
 #
-# PREREQUISITE: regenerate the FLUX training dataset first (it is gitignored):
-#   python "$QA/scripts/build_flux_filtered_dataset.py"
-# The config expects images+captions at:
-#   $QA/data/ablation/carcaption3k_1620_flux_train
+# PREREQUISITES:
+#  1. Regenerate the (gitignored) FLUX training dataset:
+#       python "$QA/scripts/build_flux_filtered_dataset.py"
+#     -> config expects images+captions at $QA/data/ablation/carcaption3k_1620_flux_train
+#  2. First run downloads FLUX.1-schnell (~24GB, Apache-2.0, no token) + the
+#     ostris/FLUX.1-schnell-training-adapter to the HF cache (needs network;
+#     on HPC set HF_HOME + the proxy).
 # ---------------------------------------------------------------------------
 set -euo pipefail
 

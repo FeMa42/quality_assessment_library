@@ -19,11 +19,11 @@ export ENV_TRELLIS_TRAIN="${ENV_TRELLIS_TRAIN:-trellis1_cc1620}" # train.py fine
 export ENV_GEN="${ENV_GEN:-trellis1_cc1620}"                     # evaluate_trellis_prompt_following.py (FLUX+TRELLIS)
 export ENV_QA="${ENV_QA:-trellis1_cc1620}"                       # run_meshfleet_eval.py (working ImageReward + lpips)
 
-# FLUX LoRA *training* (stage 30, ai-toolkit run.py) is the ONE remaining env gap:
-# there is NO `ai_toolkit` conda env on this cluster (conda env list: trellis_local,
-# trellis2, trellis2_v2, trellis_qa, trellis_printability, hunyuan3d_local,
-# prusa_libs, trellis1_cc1620). Create an `ai_toolkit` env, or run the FLUX finetune
-# on the HPC per ai-toolkit/start_finetune.slurm (module load + proxy).
+# FLUX LoRA *training* (stage 30, ai-toolkit run.py): the `ai_toolkit` conda env
+# (torch 2.6.0+cu126, diffusers@pinned, transformers 4.49, opencv-headless,
+# bitsandbytes, peft, optimum-quanto) — built & verified 2026-06-04 by
+# ./00b_build_ai_toolkit_env.sh (snapshot: ai_toolkit_freeze.txt). If missing,
+# run that script once. (HPC alternative: ai-toolkit/start_finetune.slurm.)
 export ENV_FLUX="${ENV_FLUX:-ai_toolkit}"
 
 # --- Project roots --------------------------------------------------------
