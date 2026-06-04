@@ -52,7 +52,17 @@ export METADATA_CSV="${METADATA_CSV:-$QA/data/meshfleet/meshfleet_test.csv}"
 # --- conda activation helper ----------------------------------------------
 # Usage: activate "$ENV_TRELLIS_PREP"
 activate () {
+    # Activate a conda env robustly under `set -euo pipefail`.
+    # conda's activate.d hooks (e.g. libblas_mkl_activate.sh does
+    # `export CONDA_MKL_INTERFACE_LAYER_BACKUP=${MKL_INTERFACE_LAYER}`) reference
+    # UNSET vars, which abort under `set -u`. So disable nounset around the conda
+    # calls and restore the caller's previous setting afterward. Also `conda
+    # deactivate` first so switching envs mid-script (generation -> eval) is clean.
     export PATH=/home/damian/miniconda3/bin:$PATH
+    local _had_u=0; case $- in *u*) _had_u=1;; esac
+    set +u
     eval "$(conda shell.bash hook)"
+    conda deactivate 2>/dev/null || true
     conda activate "$1"
+    if [ "$_had_u" = 1 ]; then set -u; fi
 }

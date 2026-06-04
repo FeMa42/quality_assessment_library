@@ -1,13 +1,17 @@
 #!/bin/bash
 #SBATCH --account=mitarbeiter
 #SBATCH --partition=l40s
-#SBATCH --qos=l40s-gpu
+#SBATCH --qos=l40s-cpu
 #SBATCH --nodes=1
 #SBATCH --ntasks-per-node=1
 #SBATCH --cpus-per-task=2
 #SBATCH --mem=16G
 #SBATCH --time=00:30:00
 #SBATCH --job-name=cc1620_60_table
+# NOTE: CPU-only job -> uses the l40s-cpu QoS and requests no --gres (a GPU QoS
+# would reject a no-GPU job). If l40s-cpu is unavailable on your cluster, either
+# add `#SBATCH --gres=gpu:1` (wasteful but schedulable) or just run the one-line
+# table assembly manually (see body) after stages 50/51/52 finish.
 #SBATCH --output=/home/damian/Projects/quality_assessment_library/slurm/ablation/logs/%x-%j.out
 #SBATCH --error=/home/damian/Projects/quality_assessment_library/slurm/ablation/logs/%x-%j.err
 # ---------------------------------------------------------------------------
