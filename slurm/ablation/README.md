@@ -106,13 +106,15 @@ gen+eval (each gpu:1):
 - **OI-2 (ss_flow checkpoint) — handled.** The script now accepts
   `--ss_flow_checkpoint_path` (and loads `.pt`), so P1/P2 pass both finetuned
   stages directly. The gen scripts glob the highest-step `denoiser_step*.pt`.
-- **OI-3 (assembly i→sha mapping) — STILL OPEN, CONFIRM.** The gen scripts copy
-  `glb_<sha>/` QA-spec frames → `data/ablation/gen/<VARIANT>/<sha>/000.png..011.png`
-  in sorted view order. This assumes the `glb_*` dir name carries the sha. If the
-  generation writes a numeric index `glb_<i>/` instead, you must map `i → sha`
-  using the `--prompt_file` row order. **The `--prompt_file` (`meshfleet_test.csv`)
-  must list the 232 held-out objects' prompts in sha order** — verify against
-  `prepare_meshfleet_benchmark.ipynb` before running.
+- **OI-3 (assembly) — RESOLVED.** The generation script already keys outputs by
+  sha (`sample_<sha>.glb`, `glb_<sha>/`), so there is no `i→sha` mapping to do.
+  Assembly now stages `sample_<sha>.glb → <sha>/<sha>.glb` (`stage_generated_glbs.py`)
+  and renders at the GT camera with the canonical `render_for_quality_assessment.py`
+  (the same renderer used for every reference method: az 0–330 step 30, elevation 90,
+  radius 1.5) → `data/ablation/gen/<VARIANT>/<sha>/000.png..011.png`. The fragile
+  `glb_<sha>/renders` copy is no longer used. The `--prompt_file` is the committed
+  `manifests/meshfleet_heldout_232_prompts.csv` (exactly the 232 held-out objects,
+  sha-sorted, built by `scripts/build_heldout_prompt_file.py`).
 - **EMA vs raw checkpoint.** The gen scripts use the raw `denoiser_step*.pt`. To
   use EMA weights, switch the glob to your trainer's EMA filename
   (e.g. `ema_step*.pt`). Confirm which is preferred.
