@@ -6,31 +6,25 @@
 # either drifted or do not exist (see README.md "Env caveats").
 # ---------------------------------------------------------------------------
 
-# --- Conda envs — CONFIRM THESE before submitting. ------------------------
-# Data pipeline (render / voxelize / extract_feature / encode_*).  trellis_local
-# is currently DRIFTED (numpy 2.x + open3d 0.17 segfaults voxelize; wrong utils3d
-# lacks .io/.torch).  It MUST be aligned to TRELLIS/requirements_qa.txt
-# (numpy 1.26.4 / open3d 0.19.0 / utils3d 0.0.2) via ./00_fix_trellis_env.sh
-# before any data-prep job is submitted.
-export ENV_TRELLIS_PREP="${ENV_TRELLIS_PREP:-trellis_local}"
+# --- Conda envs ----------------------------------------------------------
+# ONE env runs data-prep + training + generation + eval: `trellis1_cc1620`,
+# built by ./00_fix_trellis_env.sh (clone of the known-good `trellis_printability`
+# TRELLIS-1 stack + verified fixes: numpy 1.26.4, open3d 0.17.0,
+# opencv-python-headless 4.10.0.84, diffusers 0.31.0, lpips, + an ImageReward
+# import patch). Verified 2026-06-04 — voxelize, trellis pipelines, FLUX,
+# ImageReward, lpips all work; full snapshot in trellis1_cc1620_freeze.txt.
+# RUN 00_fix_trellis_env.sh ONCE before submitting if the env does not exist yet.
+export ENV_TRELLIS_PREP="${ENV_TRELLIS_PREP:-trellis1_cc1620}"   # render/voxelize/feature/encode
+export ENV_TRELLIS_TRAIN="${ENV_TRELLIS_TRAIN:-trellis1_cc1620}" # train.py finetuning
+export ENV_GEN="${ENV_GEN:-trellis1_cc1620}"                     # evaluate_trellis_prompt_following.py (FLUX+TRELLIS)
+export ENV_QA="${ENV_QA:-trellis1_cc1620}"                       # run_meshfleet_eval.py (working ImageReward + lpips)
 
-# train.py finetuning.  Same dependency constraints as the data pipeline.
-export ENV_TRELLIS_TRAIN="${ENV_TRELLIS_TRAIN:-trellis_local}"
-
-# Generation (evaluate_trellis_prompt_following.py): needs trellis + diffusers +
-# ImageReward + nvdiffrast.  CONFIRM nvdiffrast (0.3.3) is installed in this env —
-# trellis_local currently lacks it (see 00_fix_trellis_env.sh, which installs it).
-export ENV_GEN="${ENV_GEN:-trellis_local}"
-
-# FLUX LoRA training.  NOTE: there is NO `ai_toolkit` env on this cluster (verified
-# via `conda env list`: trellis_local, trellis2, trellis2_v2, trellis_qa,
-# trellis_printability, hunyuan3d_local, prusa_libs).  Either create an
-# `ai_toolkit` env here, or run the FLUX finetune on the HPC cluster per
-# ai-toolkit/start_finetune.slurm (module load + proxy).  See 30_flux_finetune.sbatch.
+# FLUX LoRA *training* (stage 30, ai-toolkit run.py) is the ONE remaining env gap:
+# there is NO `ai_toolkit` conda env on this cluster (conda env list: trellis_local,
+# trellis2, trellis2_v2, trellis_qa, trellis_printability, hunyuan3d_local,
+# prusa_libs, trellis1_cc1620). Create an `ai_toolkit` env, or run the FLUX finetune
+# on the HPC per ai-toolkit/start_finetune.slurm (module load + proxy).
 export ENV_FLUX="${ENV_FLUX:-ai_toolkit}"
-
-# QA evaluation (run_meshfleet_eval.py).
-export ENV_QA="${ENV_QA:-trellis_qa}"
 
 # --- Project roots --------------------------------------------------------
 export QA="${QA:-/home/damian/Projects/quality_assessment_library}"

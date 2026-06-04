@@ -10,10 +10,12 @@ All scripts source [`env.sh`](./env.sh) and wrap the exact commands documented i
 
 ## How to run (one paragraph)
 
-1. Fix the data-prep/train/gen conda env: `bash 00_fix_trellis_env.sh`
-   (aligns it to `requirements_qa.txt`: numpy 1.26.4 / open3d 0.19.0 /
-   utils3d 0.0.2 / nvdiffrast 0.3.3).
-2. Handle the FLUX env gap (see caveats) and confirm all env vars in `env.sh`.
+1. Build the one working conda env: `bash 00_fix_trellis_env.sh` (clones the
+   known-good `trellis_printability` → `trellis1_cc1620` and applies verified
+   fixes: numpy 1.26.4, open3d 0.17.0, opencv-headless 4.10.0.84, diffusers 0.31.0,
+   lpips, ImageReward import patch). Already created here & verified 2026-06-04.
+2. Handle the FLUX *LoRA-training* env gap (stage 30, see caveats) and confirm the
+   env vars in `env.sh`.
 3. Submit the whole DAG: `bash submit_all.sh`. It prints the job IDs + the
    dependency graph. Re-submit any 100k-step finetune if it hits the 72h wall
    (it resumes via `--ckpt latest`).
@@ -22,11 +24,11 @@ All scripts source [`env.sh`](./env.sh) and wrap the exact commands documented i
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `ENV_TRELLIS_PREP` | `trellis_local` | data pipeline; **DRIFTED — fix via `00_fix_trellis_env.sh`** |
-| `ENV_TRELLIS_TRAIN` | `trellis_local` | `train.py` finetuning |
-| `ENV_GEN` | `trellis_local` | generation; needs trellis + diffusers + ImageReward + **nvdiffrast** |
-| `ENV_FLUX` | `ai_toolkit` | FLUX LoRA; **NO such env on this cluster — create it or run on HPC** |
-| `ENV_QA` | `trellis_qa` | `run_meshfleet_eval.py` |
+| `ENV_TRELLIS_PREP` | `trellis1_cc1620` | data pipeline (built by `00_fix_trellis_env.sh`) |
+| `ENV_TRELLIS_TRAIN` | `trellis1_cc1620` | `train.py` finetuning |
+| `ENV_GEN` | `trellis1_cc1620` | generation; trellis + diffusers 0.31 + ImageReward + nvdiffrast (all verified) |
+| `ENV_FLUX` | `ai_toolkit` | FLUX LoRA **training** only; **NO such env on this cluster — create it or run on HPC** |
+| `ENV_QA` | `trellis1_cc1620` | `run_meshfleet_eval.py` (working ImageReward + lpips) |
 | `QA` / `TRELLIS` / `AITK` | project roots | |
 | `FLUX_LORA_REPO` | `DamianBoborzi/flux_carcaption3k_1620_lora32` | **confirm post-training** |
 | `FLUX_LORA_WEIGHT` | `flux_carcaption3k_1620_lora32.safetensors` | **confirm post-training** |
@@ -38,16 +40,24 @@ editing the file.
 
 ## Env caveats (READ before submitting)
 
-- **`trellis_local` is drifted.** numpy 2.x + open3d 0.17 **segfaults**
-  `voxelize.py`; the installed `utils3d` is the wrong package (lacks `.io`/`.torch`),
-  breaking `extract_feature.py`/`encode_*.py`. Run `00_fix_trellis_env.sh` first.
-- **No `ai_toolkit` env exists here** (verified `conda env list`:
-  `trellis_local, trellis2, trellis2_v2, trellis_qa, trellis_printability,
-  hunyuan3d_local, prusa_libs`). Stage 30 (FLUX) will fail until you create an
-  `ai_toolkit` env locally **or** run the FLUX finetune on the HPC cluster per
-  `ai-toolkit/start_finetune.slurm` (module load + HTTP(S) proxy).
-- **nvdiffrast for generation.** `ENV_GEN` must have nvdiffrast (0.3.3);
-  `trellis_local` currently lacks it — `00_fix_trellis_env.sh` installs it.
+- **Data-prep / training / generation / eval env is RESOLVED.** `trellis1_cc1620`
+  (built & verified 2026-06-04 by `00_fix_trellis_env.sh`) runs all of them:
+  voxelize (open3d 0.17 + numpy 1.26.4), TRELLIS train + pipelines, FLUX+TRELLIS
+  generation (diffusers 0.31.0), and eval (ImageReward import-patched + lpips).
+  `trellis_local` was abandoned (drifted). Full version snapshot:
+  `trellis1_cc1620_freeze.txt`. **Why these pins:** numpy 1.26.4 (open3d voxelize
+  segfaults on numpy 2.x); open3d 0.17 (0.19 needs a missing `libGL.so.1`);
+  diffusers 0.31 (0.38 registers flash-attn-3 as a torch custom op that torch
+  2.4's `infer_schema` rejects, breaking FluxPipeline AND ImageReward); the
+  ImageReward `med.py` patch (transformers 4.57 moved `apply_chunking_to_forward`
+  to `transformers.pytorch_utils`).
+- **ONE remaining gap — the FLUX *LoRA finetune* (stage 30).** There is no
+  `ai_toolkit` conda env on this cluster (conda env list: `trellis_local,
+  trellis2, trellis2_v2, trellis_qa, trellis_printability, hunyuan3d_local,
+  prusa_libs, trellis1_cc1620`). Create an `ai_toolkit` env **or** run the FLUX
+  finetune on the HPC per `ai-toolkit/start_finetune.slurm` (module load + proxy).
+  Note: FLUX *generation* (stage 50, via diffusers FluxPipeline) works in
+  `trellis1_cc1620`; only the LoRA *training* needs the ai-toolkit env.
 
 ## Submit order + DAG
 
@@ -128,7 +138,8 @@ gen+eval (each gpu:1):
 | File | Purpose |
 |------|---------|
 | `env.sh` | shared env vars + `activate()` helper (sourced by all) |
-| `00_fix_trellis_env.sh` | helper to align the conda env to `requirements_qa.txt` (run by hand) |
+| `00_fix_trellis_env.sh` | build `trellis1_cc1620` (clone `trellis_printability` + verified fixes); run by hand once |
+| `trellis1_cc1620_freeze.txt` | `pip freeze` snapshot of the verified working env |
 | `10_dataprep_train_render.sbatch` | train metadata + render (sharded 2 GPU) |
 | `11_dataprep_train_geom.sbatch` | voxelize → feature → ss_latent → latent |
 | `12_dataprep_train_cond.sbatch` | render_cond (sharded 2 GPU) |
