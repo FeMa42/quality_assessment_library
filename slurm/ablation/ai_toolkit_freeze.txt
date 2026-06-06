@@ -80,7 +80,7 @@ orjson==3.11.9
 oyaml==1.0
 packaging @ file:///home/conda/feedstock_root/build_artifacts/bld/rattler-build_packaging_1777103621/work
 pandas==3.0.3
-peft==0.19.1
+peft==0.16.0
 pillow==12.2.0
 platformdirs==4.10.0
 prodigyopt==1.1.2
