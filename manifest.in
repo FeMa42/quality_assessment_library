@@ -1,3 +1,0 @@
-include README.md
-include requirements_min.txt
-recursive-include car_quality_estimator *

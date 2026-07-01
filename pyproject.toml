@@ -26,6 +26,7 @@ dependencies = [
     "imageio>=2.34",
     "transformers>=4.45",
     "huggingface_hub>=0.30",
+    "einops==0.8.0",
     "safetensors>=0.4", 
     "clip @ git+https://github.com/openai/CLIP.git@a1d071733d7111c9c014f024669f959182114e33",
     "sentencepiece>=0.2.0",
@@ -44,6 +45,11 @@ dependencies = [
     "packaging>=24.1", 
     "sdata>=0.23",
     "image-reward>=1.5",
+    # Mesh Metrics Dependencies:
+    "rtree>=0.9.0",
+    "trimesh>=3.20",
+    "vtk>=9.2.6",
+    "MeshMetrics @ git+https://github.com/gasperpodobnik/MeshMetrics.git@main",
 ]
 
 [project.urls]
@@ -54,5 +60,5 @@ dependencies = [
 quality-assessment-download-models = "scripts.download_models:download_models"
 
 [tool.setuptools]
-packages = ["car_quality_estimator", "scripts", "metrics", "preprocessing"]
+packages = ["car_quality_estimator", "scripts", "metrics", "preprocessing", "meshfleet_benchmark"]
 include-package-data = true

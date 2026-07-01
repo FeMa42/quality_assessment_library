@@ -88,16 +88,22 @@ def preprocess_image_rgba(
     Returns:
         PIL.Image.Image or torch.Tensor: The preprocessed image.
     """
-    image.thumbnail([768, 768], PIL.Image.Resampling.LANCZOS)
+    # Already-RGBA inputs (e.g. from the scaled preprocessing cache) have already
+    # been background-removed and alpha-matted; re-running rembg is wasted work
+    # and dominates per-object runtime. Mirror the early-exit in preprocess_image.
+    if image.mode == "RGBA":
+        pass
+    else:
+        image.thumbnail([768, 768], PIL.Image.Resampling.LANCZOS)
 
-    # Surpress weird scipy warning
-    @contextlib.contextmanager
-    def suppress_stdout_stderr():
-        with open(os.devnull, 'w') as devnull:
-            with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
-                yield
-    with suppress_stdout_stderr():
-        image = remove(image, alpha_matting=True)
+        # Surpress weird scipy warning
+        @contextlib.contextmanager
+        def suppress_stdout_stderr():
+            with open(os.devnull, 'w') as devnull:
+                with contextlib.redirect_stdout(devnull), contextlib.redirect_stderr(devnull):
+                    yield
+        with suppress_stdout_stderr():
+            image = remove(image, alpha_matting=True)
 
     # resize object in frame
     if resize_image:
@@ -169,7 +175,7 @@ def process_folder(original_folder, generated_folder, preprocess_func, metric_cl
     Returns:
       dict: Averaged metrics.
     """
-    print(f"[process_folder] class={metric_class.__name__}, kwargs={metric_kwargs}")
+    # print(f"[process_folder] class={metric_class.__name__}, kwargs={metric_kwargs}")
 
     if metric_class.__name__ == "Metrics":
         semantic_metric = metric_class(device=device, **metric_kwargs)
@@ -477,6 +483,10 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
         metadata_file_path (str): Path to the metadata file.
         prompt_metric: function which estimates the prompt metrics. E.g. Instance of ImageBasedPromptEvaluator.
         preprocess_image: function which preprocesses the image. E.g. preprocess_image_rgba.
+
+    Returns:
+        Tuple of (mean_scores, std_scores, per_object) where per_object maps each
+        object's sha256 folder name to a dict of metric -> score.
     """
     # Load metadata file
     metadata_file = pd.read_csv(metadata_file_path)
@@ -484,6 +494,8 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
     gen_object_folder = [f for f in gen_object_folder if os.path.isdir(os.path.join(generated_base_folder, f))]
 
     all_scores = {}
+    per_object: dict = {}
+    print(f"[PROMPT FOLLOWING] Processing {len(gen_object_folder)} generated objects with metadata file {metadata_file_path}...")
     for i in tqdm(range(len(gen_object_folder))):
         obj_folder = gen_object_folder[i]
         object_prompt = get_caption_from_metadata(metadata_file, obj_folder.strip(), "refined_3d_prompt")
@@ -493,6 +505,7 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
                                                 object_prompts=object_prompt,
                                                 preprocess_func=preprocess_image,
                                                 prompt_metric=prompt_metric)
+        per_object[obj_folder] = {k: float(v) for k, v in promp_score.items()}
         for key, value in promp_score.items():
             if key not in all_scores:
                 all_scores[key] = []
@@ -505,7 +518,7 @@ def process_folder_with_metadata_file(generated_base_folder, metadata_file_path,
     for key, value in all_scores.items():
         std_scores[key] = pd.Series(value).std()
         mean_scores[key] = pd.Series(value).mean()
-    return mean_scores, std_scores
+    return mean_scores, std_scores, per_object
 
 def load_images_from_dir_to_pil(image_dir: str, preprocess_func):
     """
@@ -572,7 +585,7 @@ def process_folder_with_prompt(
     image_scores = prompt_metric.evaluate(generated_images, object_prompts)
     return image_scores
 
-def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, florence_wheelbase_od):
+def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, florence_wheelbase_od, detect_wheels=True):
     """
     Evaluate the vehicle dimensions of generated objects against the metadata file.
     Args:
@@ -583,18 +596,31 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
     # Load the metadata file
     metadata_file = pd.read_csv(metadata_file_path)
     all_obj_sha256 = os.listdir(generated_base_folder)
+    all_obj_sha256 = [f for f in all_obj_sha256 if os.path.isdir(os.path.join(generated_base_folder, f))]
     dimension_differences = {
         "length_difference": [],
         "width_difference": [],
         "wheelbase_difference": []
     }
+    per_object: dict = {}
+    print(f"[VEHICLE DIMENSIONS] Processing {len(all_obj_sha256)} generated objects with metadata file {metadata_file_path}...")
     for sha256 in tqdm(all_obj_sha256):
         # Check if the folder exists
         generated_folder = os.path.join(generated_base_folder, sha256)
         if not os.path.exists(generated_folder):
             print(f"Folder {generated_folder} does not exist.")
             continue
-        generated_vehicle_data = florence_wheelbase_od.get_vehicle_dimensions_from_folder(generated_folder, normalize=True)
+        try:
+            generated_vehicle_data = florence_wheelbase_od.get_vehicle_dimensions_from_folder(generated_folder, normalize=True, detect_wheels=detect_wheels)
+        except Exception as exc:
+            # Florence/multiview helpers can throw IndexError when an object has
+            # fewer than two viewpoints (e.g. corrupt render). Skip the object
+            # rather than aborting the entire stage.
+            print(f"[vehicle_dim] {sha256}: skipping ({type(exc).__name__}: {exc})")
+            continue
+        if generated_vehicle_data is None:
+            print(f"[vehicle_dim] {sha256}: skipping (no images in folder)")
+            continue
         metadata_row = metadata_file[metadata_file["sha256"] == sha256]
         if metadata_row.empty:
             print(f"Metadata for {sha256} not found.")
@@ -612,11 +638,13 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
             dimension_differences["length_difference"].append(length_diff)
             dimension_differences["width_difference"].append(width_diff)
             dimension_differences["wheelbase_difference"].append(wheelbase_diff)
+            per_object[sha256] = {
+                "length_difference": float(length_diff),
+                "width_difference": float(width_diff),
+                "wheelbase_difference": float(wheelbase_diff),
+            }
+
     # Calculate the average of the differences
-
-
-            
-    # Calculate the average of the average differences
     overall_average_diff = {}
     standard_deviation = {}
     for key, value in dimension_differences.items():
@@ -626,5 +654,5 @@ def evaluate_vehicle_dimensions(generated_base_folder, metadata_file_path, flore
         else:
             overall_average_diff[key] = None
             standard_deviation[key] = None
-    
-    return overall_average_diff, standard_deviation
+
+    return overall_average_diff, standard_deviation, per_object

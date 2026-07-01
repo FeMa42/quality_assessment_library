@@ -1,30 +1,31 @@
-# Meshfleet Benchmark Configuration
+# MeshFleet Benchmark Configuration File
+# This file configures the evaluation pipeline for 3D model quality assessment
 
-# Input/Output paths
+# File paths configuration
 paths:
   ground_truth_folder: "data/meshfleet/benchmark_data/meshfleet_eval_images"
-  generated_folder: "example_data/Meshfleet_Eval/Results_000"
-  output_folder: "data/meshfleet_eval_output_flux_lora_maxR"
-  metadata_file: "meshfleet_benchmark/meshfleet_test.csv"
+  # generated_folder: "data/meshfleet/generated"
+  generated_folder: "/mnt/damian/Projects/TRELLIS/prompt_alignment_images_testset/generated_flux_lora_maxR"
+  output_folder: "data/meshfleet_evaluation"
+  metadata_file: "data/meshfleet/meshfleet_test.csv"
   metrics_config: "meshfleet_benchmark/config_meshfleet.json"
 
-# Preprocessing settings
+# Preprocessing configuration
 preprocessing:
   background_removal:
-    enabled: true
-    force: false
+    enabled: true # Whether to remove backgrounds from images, will replace the original images
+    single_thread: false  # Set to true for single-threaded processing
   
   view_alignment:
-    enabled: true
-    force: false
+    enabled: true # Whether to align views of the 3D models with the ground truth
   
   scale_equalization:
     enabled: true
     force: false
-    canvas_size: [768, 768]
-    fill_ratio: 0.9
+    canvas_size: [768, 768]  # Canvas size for scaling
+    fill_ratio: 0.9  # How much of the canvas to fill
 
-# Evaluation settings
+# Evaluation configuration
 evaluation:
   semantic_geometric:
     enabled: true
@@ -36,9 +37,9 @@ evaluation:
     enabled: true
   
   filter_by_metadata:
-    enabled: true
+    enabled: true  # Whether to filter objects using metadata file
 
-# Runtime settings
+# Runtime configuration
 runtime:
-  device: "auto"  # "auto", "cuda", or "cpu"
-  omp_num_threads: "1"
+  device: "auto"  # Options: "auto", "cuda", "cpu"
+  omp_num_threads: "1"  # Number of OpenMP threads

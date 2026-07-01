@@ -10,6 +10,7 @@ import torch
 import torch.nn.functional as F
 import timm
 import torchvision.transforms as T
+from tqdm import tqdm
 from metrics.helpers import compute_bounding_box
 
 # =============================================================================
@@ -173,7 +174,7 @@ def determine_front_candidate_dino(ws, pil_imgs, ground_truth_img, dino_model, d
     sim1 = F.cosine_similarity(gt_features.unsqueeze(0), feat1.unsqueeze(0), dim=1).item()
     sim2 = F.cosine_similarity(gt_features.unsqueeze(0), feat2.unsqueeze(0), dim=1).item()
     
-    print(f"DINO similarity: Candidate1: {sim1:.4f}, Candidate2: {sim2:.4f}")
+    # print(f"DINO similarity: Candidate1: {sim1:.4f}, Candidate2: {sim2:.4f}")
     return candidate1 if sim1 >= sim2 else candidate2
 
 def align_subfolder(subfolder, detection_mode="vlm",
@@ -226,7 +227,7 @@ def align_subfolder(subfolder, detection_mode="vlm",
         print(f"Candidate extraction failed in {subfolder}.")
         return None
     
-    print(f"[{os.path.basename(subfolder)}] Detected front view index: {front_index} (original file: {image_files[front_index]})")
+    # print(f"[{os.path.basename(subfolder)}] Detected front view index: {front_index} (original file: {image_files[front_index]})")
     
     new_order = image_files[front_index:] + image_files[:front_index]
     temp_prefix = "temp_rename_"
@@ -262,7 +263,7 @@ def align_views(parent_folder, detection_mode="vlm",
     subfolders = [os.path.join(parent_folder, d) for d in os.listdir(parent_folder)
                   if os.path.isdir(os.path.join(parent_folder, d))]
     results = []
-    for subf in subfolders:
+    for subf in tqdm(subfolders, desc="Aligning views", unit="subfolder"):
         front_idx = align_subfolder(subf, detection_mode=detection_mode,
                                     vlm_model=vlm_model, vlm_processor=vlm_processor, prompt=prompt,
                                     dino_model=dino_model, dino_transform=dino_transform, ground_truth_parent=ground_truth_parent,
@@ -510,7 +511,7 @@ def process_equal_scaling_structure(ground_truth_parent, generated_parent,
     canvas_width = canvas_size[0]
     target_width = fill_ratio * canvas_width  
     
-    for obj_folder in sorted(os.listdir(ground_truth_parent)):
+    for obj_folder in tqdm(sorted(os.listdir(ground_truth_parent)), desc="Processing objects", unit="object"):
         gt_obj_path = os.path.join(ground_truth_parent, obj_folder)
         if not os.path.isdir(gt_obj_path):
             continue
@@ -557,8 +558,8 @@ def process_equal_scaling_structure(ground_truth_parent, generated_parent,
             gt_centered.save(os.path.join(out_orig_obj, fname))
             gen_centered.save(os.path.join(out_gen_obj, fname))
             
-            print(f"Processed {obj_folder}/{fname}: gt_w={gt_w}, gen_w={gen_w}, "
-                  f"scale_factor_gen={scale_factor_gen:.3f}, scale_factor_final={scale_factor_final:.3f}")
+            # print(f"Processed {obj_folder}/{fname}: gt_w={gt_w}, gen_w={gen_w}, "
+            #       f"scale_factor_gen={scale_factor_gen:.3f}, scale_factor_final={scale_factor_final:.3f}")
 
 # =============================================================================
 # GPU Memory Management
@@ -725,7 +726,7 @@ def swap_files(dir_path, file1, file2):
     os.rename(path1, tmp_path)
     os.rename(path2, path1)
     os.rename(tmp_path, path2)
-    print(f"Swapped {file1} and {file2} in {dir_path}")
+    # print(f"Swapped {file1} and {file2} in {dir_path}")
 
 def restructure_images(parent_folder):
 
@@ -735,12 +736,12 @@ def restructure_images(parent_folder):
         return
 
     # Iterate over all items in the parent directory.
-    for item in os.listdir(parent_folder):
+    for item in tqdm(os.listdir(parent_folder, desc="Restructuring images", unit="item")):
         subfolder_path = os.path.join(parent_folder, item)
         
         # Process only subfolders.
         if os.path.isdir(subfolder_path):
-            print(f"Processing folder: {subfolder_path}")
+            # print(f"Processing folder: {subfolder_path}")
             
             # Define swap pairs
             swap_pairs = [

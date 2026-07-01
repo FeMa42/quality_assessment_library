@@ -1,6 +1,6 @@
 # Quality Assessment Library
-This library provides a set of functions for assessing the quality of 3D objects. It is focused on estimating the quality of generated 3D objects using images. 
-It provides two main functionalities:
+This library provides a set of functions for assessing the quality of 3D objects. It is focused on estimating the quality of generated 3D objects using images, and additionally provides direct 3D (mesh and point-cloud) metrics.
+It provides the following functionalities:
 - General metrics (Semantic Metrics): metrics that can be applied to any 3D object. These metrics include: MSE, CLIP-S, Spectral_MSE, D_lambda, ERGAS, PSNR, RASE, RMSE_wind, SAM, MS-SSIM, SSIM, UQI, VIF, LPIPS, SCC. And are mainly based on torchmetrics.
 - Geometry Metrics:
   - Rel_BB_Aspect_Ratio_Diff: Bounding box aspect ratio difference
@@ -17,11 +17,26 @@ It provides two main functionalities:
 - Vehicle Based Dimension comparison
   - Width and length comparison (normalized by height)
   - Vehicle wheelbase comparison (normalized by height). Uses Florence OD to detect the wheels.
+- Direct 3D metrics (in the `metrics_3d` module):
+  - mesh-based metrics utilizing the [MeshMetrics](https://github.com/gasperpodobnik/MeshMetrics) library
+  - point cloud metrics (no watertightness required)
+  - For more details on how to use metrics_3d see the [metrics_3d README](./metrics_3d/README.md) or for a quick start the [jupyter notebook example](./metrics_3d_example.ipynb)
 
 **This repository is specifically designed for the assessment of Generative Models on the MeshFleet Benchmark.** 
 It enables the evaluation of 3D objects reconstructed with a generative model like TRELLIS. For an evaluation, pairs of images (original rendered images & rendering of Trellis reconstructions) are required. 
 
 ## Installation
+
+### System Dependencies
+
+Before installing the Python dependencies, ensure the following system dependencies are installed:
+
+- Dependencies for 3D Metrics:
+  - `libxrender1` (Linux: `sudo apt update && sudo apt install -y libxrender1`)
+- Dependencies for 2D Metrics:
+  - /
+
+If you need this Package for 2D Metrics only, you will not need to install the dependencies for the 3D Metrics.
 
 ### Option 1: Quick installation with models
 
@@ -36,7 +51,7 @@ cd quality_assessment_library
 python scripts/install.py --develop
 ```
 
-This will install the package and download all required model files into the cloned repository. 
+This will install the package and download all required model files into the cloned repository.
 
 ### Option 2: Manual installation
 
@@ -120,6 +135,8 @@ By default the script will also preprocess the images (removing background, alig
 
 `data_preprocessing.ipynb` provides a pipeline for processing generated Trellis viewpoints so that they can be compared to Ground Truth evaluation data. It includes functionalities for Background Removal, Equal Scaling and Visualization. It also includes methods to align the images in the folders. Front View Detection detects the front view of a car in a folder of car images and enables aligning the viewpoints.
 
+`data_3d_preprocessing.ipynb` provides a similar pipeline for processing 3D data, including functionalities for mesh scale normalization, centering and alignment (see [metrics_3d](./metrics_3d/README.md)).
+
 ## Usage of general metrics
 
 Example usage of the metrics library can be found in `metrics.ipynb`.
@@ -130,7 +147,7 @@ We also provide an option to compute the metrics for an entire subdirectory with
 
 Example usage of the car quality metrics can be found in `car_quality_metrics.ipynb`.
 
-## Basic usage:
+## Basic usage
 
 ```python
 from car_quality_estimator.car_quality_metric import load_car_quality_score
@@ -158,3 +175,4 @@ print(scores)
 - Collection of 3D Quality Assessment Repositories: [3DQA Databases](https://github.com/zzc-1998/Point-cloud-quality-assessment)
 - Aesthetic Predictor used by TRELLIS: [improved-aesthetic-predictor](https://github.com/christophschuhmann/improved-aesthetic-predictor)
 - Dataset and Classifier for classifying the quality of 3D vehicles: [MeshFleet](https://github.com/FeMa42/MeshFleet)
+- MeshMetrics library for mesh-based metrics: [MeshMetrics](https://github.com/gasperpodobnik/MeshMetrics) / [Mesh Metrics Paper](https://arxiv.org/abs/2410.02630)

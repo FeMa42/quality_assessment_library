@@ -68,7 +68,7 @@ class Metrics:
             "Spectral_MSE": self._make_spectral_mse(),
             "D_lambda": spectral_distortion_index,
             "ERGAS": error_relative_global_dimensionless_synthesis,
-            "PSNR": peak_signal_noise_ratio,
+            "PSNR": lambda inp, tgt: peak_signal_noise_ratio(inp, tgt, data_range=2.0),
             "RASE": relative_average_spectral_error,
             "RMSE_wind": root_mean_squared_error_using_sliding_window,
             "SAM": spectral_angle_mapper,
@@ -106,9 +106,9 @@ class Metrics:
         else:
             self.distribution_metrics = {}
 
-        print(f"[Metrics] will compute: {list(self.metrics.keys())}")
-        if self.compute_distribution_metrics:
-            print(f"[Metrics] will compute distributions: {list(self.distribution_metrics.keys())}")
+        # print(f"[Metrics] will compute: {list(self.metrics.keys())}")
+        # if self.compute_distribution_metrics:
+        #     print(f"[Metrics] will compute distributions: {list(self.distribution_metrics.keys())}")
 
         self.result              = torch.zeros(len(self.metrics), device=device)
         self.result_distribution = (
@@ -204,7 +204,7 @@ class GeometryMetrics:
     def __init__(self, num_points: int = 100, metric_list: Optional[List[str]] = None):
         self.num_points  = num_points
         self.metric_list = metric_list
-        print(f"[GeometryMetrics] metric_list = {self.metric_list}")
+        # print(f"[GeometryMetrics] metric_list = {self.metric_list}")
 
         self.reset()
 
@@ -288,7 +288,7 @@ class CarQualityMetrics:
             batch_size=batch_size,
         )
         self.metrics_list = metrics_list
-        print(f"[CarQualityMetrics] metrics_list = {self.metrics_list}")
+        # print(f"[CarQualityMetrics] metrics_list = {self.metrics_list}")
 
 
     def compute_folder_metrics(self, folder: str) -> dict:

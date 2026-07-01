@@ -33,7 +33,7 @@
       ]
     },
     "global_distribution": {
-      "enabled": true,
+      "enabled": false,
       "metrics": [
         "FID",
         "KID",
