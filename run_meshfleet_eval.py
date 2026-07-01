@@ -101,7 +101,15 @@ Examples:
                         help='Override device selection')
     parser.add_argument('--verbose', action='store_true',
                         help='Enable verbose logging')
-    
+
+    # Per-object aggregation mode (Track B)
+    parser.add_argument('--per-object', action='store_true',
+                        help='Aggregate metrics per object instead of per viewpoint, '
+                             'and emit a long-format per-object CSV.')
+    parser.add_argument('--model-name', type=str,
+                        help='Logical model name used in CSV output and filenames. '
+                             'Defaults to the basename of the generated folder.')
+
     return parser.parse_args()
 
 
@@ -248,21 +256,27 @@ def main():
         logging.info(f"Evaluation ground truth folder: {eval_gt_folder}")
         logging.info(f"Evaluation generated folder: {eval_gen_folder}")
 
+        # Resolve model name (used in per-object CSV)
+        model_name = args.model_name or Path(gen_folder).name
+
         # Run evaluation pipeline
         evaluation_success = True
         if enabled_evaluation:
             logging.info("Initializing evaluation pipeline...")
-            evaluation_pipeline = EvaluationPipeline(config, device, progress_tracker)
-            
+            evaluation_pipeline = EvaluationPipeline(
+                config, device, progress_tracker,
+                per_object_mode=args.per_object,
+            )
+
             try:
                 evaluation_success = evaluation_pipeline.run_all(
-                    eval_gt_folder, eval_gen_folder, metrics_config_path, 
+                    eval_gt_folder, eval_gen_folder, metrics_config_path,
                     metadata_file, filter_by_metadata
                 )
-                
+
                 if evaluation_success or args.continue_on_error:
                     # Save results
-                    evaluation_pipeline.save_results(output_folder)
+                    evaluation_pipeline.save_results(output_folder, model_name=model_name)
                     
                     # Save configuration used for this run
                     config_output = Path(output_folder) / "benchmark_config_used.yaml"

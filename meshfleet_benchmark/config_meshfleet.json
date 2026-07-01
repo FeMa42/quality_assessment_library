@@ -3,7 +3,10 @@
       "enabled": true,
       "metrics": [
         "MSE",
-        "CLIP-S"
+        "CLIP-S",
+        "LPIPS",
+        "SSIM",
+        "PSNR"
       ]
     },
     "distribution": {

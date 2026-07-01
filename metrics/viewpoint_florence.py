@@ -45,7 +45,7 @@ class FlorenceWheelbaseOD:
         wheelbase, wheel_bb_1, wheel_bb_2 = self.calculate_wheelbase_with_bb(image1)
         return wheelbase, wheel_bb_1, wheel_bb_2
 
-    def get_vehicle_dimensions_from_folder(self, image_folder: str, normalize=False) -> dict:
+    def get_vehicle_dimensions_from_folder(self, image_folder: str, normalize=False, detect_wheels=True) -> dict:
         images_in_generated_folder = sorted(glob.glob(os.path.join(image_folder, "*.png")))
         if len(images_in_generated_folder) == 0:
             print(f"No images found in {image_folder}")
@@ -58,11 +58,14 @@ class FlorenceWheelbaseOD:
         max_index = largest_width_indices[0] #Side view 1
 
         # Radstand
-        max_index, second_max_index, image1, image2 = find_sideviews(ws, pil_imgs)
-        try: 
-            wheelbase, wheel_bb_1, wheel_bb_2 = self.calculate_wheelbase_with_bb(image1)
-        except:
-            print(f"Error in calculate_wheelbase_with_bb")
+        if detect_wheels:
+            max_index, second_max_index, image1, image2 = find_sideviews(ws, pil_imgs)
+            try: 
+                wheelbase, wheel_bb_1, wheel_bb_2 = self.calculate_wheelbase_with_bb(image1)
+            except:
+                print(f"Error in calculate_wheelbase_with_bb")
+                wheelbase = 0
+        else:
             wheelbase = 0
         if normalize: 
             normalization = np.mean(hs)

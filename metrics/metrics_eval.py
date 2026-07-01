@@ -205,3 +205,138 @@ def process_metrics_by_viewpoint(
         results["global_distribution_metrics"] = global_dist
 
     return tensor_to_serializable(results)
+
+
+def process_metrics_by_object(
+    ground_truth_folder: str,
+    generated_folder: str,
+    device: str = "cuda",
+    config_path: str = None,
+    metadata_file_path: str = None,
+):
+    """Per-object aggregation counterpart to ``process_metrics_by_viewpoint``.
+
+    Outer loop is over objects (sha256 folders); inner loop assembles the per-object
+    viewpoints into temp folders and calls the same metric kernels used by the
+    per-viewpoint path. Distribution metrics (FID/KID/IS) are kept at model level
+    only and are not computed here.
+    """
+    cfg = {}
+    if config_path:
+        with open(config_path, "r") as f:
+            cfg = json.load(f)
+
+    sem_cfg = cfg.get("semantic", {})
+    semantic_enabled = sem_cfg.get("enabled", True)
+    semantic_list = sem_cfg.get("metrics", None)
+
+    geom_cfg = cfg.get("geometric", {})
+    geometric_enabled = geom_cfg.get("enabled", True)
+    geometric_list = geom_cfg.get("metrics", None)
+
+    car_cfg = cfg.get("car_quality", {})
+    car_enabled = car_cfg.get("enabled", True)
+    car_list = car_cfg.get("metrics", None)
+
+    obj_ids = [
+        d for d in os.listdir(ground_truth_folder)
+        if os.path.isdir(os.path.join(ground_truth_folder, d))
+    ]
+    if metadata_file_path is not None:
+        meta = pd.read_csv(metadata_file_path)
+        meta = meta[meta["sha256"].isin(obj_ids)]
+        obj_ids = meta["sha256"].tolist()
+        if not obj_ids:
+            raise ValueError("No valid object IDs found in metadata file.")
+
+    car_metric = None
+    if car_enabled:
+        car_metric = CarQualityMetrics(device=device, metrics_list=car_list)
+
+    per_object: dict = {}
+    sem_acc, geom_acc, car_acc = [], [], []
+    skipped: list = []
+
+    print(f"[OBJECT METRICS] Processing {len(obj_ids)} objects...")
+    for obj in tqdm(obj_ids):
+        gt_obj = os.path.join(ground_truth_folder, obj)
+        gen_obj = os.path.join(generated_folder, obj)
+        if not os.path.isdir(gt_obj):
+            skipped.append({"object_id": obj, "reason": "no_gt_folder"})
+            continue
+        if not os.path.isdir(gen_obj):
+            skipped.append({"object_id": obj, "reason": "no_gen_folder"})
+            continue
+
+        with tempfile.TemporaryDirectory() as gt_tmp, \
+                tempfile.TemporaryDirectory() as gen_tmp:
+            n_views = 0
+            for fn in glob.glob(os.path.join(gt_obj, "*.png")):
+                vp = os.path.basename(fn)
+                src_gen = os.path.join(gen_obj, vp)
+                if os.path.exists(src_gen):
+                    shutil.copy(fn, os.path.join(gt_tmp, vp))
+                    shutil.copy(src_gen, os.path.join(gen_tmp, vp))
+                    n_views += 1
+            if n_views == 0:
+                skipped.append({"object_id": obj, "reason": "no_matching_viewpoints"})
+                continue
+
+            entry = {"n_views": n_views}
+
+            if semantic_enabled:
+                sem = process_folder(
+                    original_folder=gt_tmp,
+                    generated_folder=gen_tmp,
+                    preprocess_func=preprocess_image,
+                    metric_class=Metrics,
+                    device=device,
+                    compute_distribution_metrics=False,
+                    metric_list=semantic_list,
+                    distribution_list=None,
+                )
+                sem_acc.append(sem)
+                entry["semantic_metrics"] = sem
+
+            if geometric_enabled:
+                geom = process_folder(
+                    original_folder=gt_tmp,
+                    generated_folder=gen_tmp,
+                    preprocess_func=preprocess_image_rgba,
+                    metric_class=GeometryMetrics,
+                    num_points=100,
+                    metric_list=geometric_list,
+                )
+                geom_acc.append(geom)
+                entry["geometric_metrics"] = geom
+
+            if car_enabled:
+                o = car_metric.compute_folder_metrics(gt_tmp)
+                g = car_metric.compute_folder_metrics(gen_tmp)
+                rel = {k: None if o[k] == 0 else (g.get(k, 0) - o[k]) / o[k] for k in o}
+                flat = {f"orig_{k}": float(v) for k, v in o.items()}
+                flat.update({f"gen_{k}": float(v) for k, v in g.items()})
+                flat.update({f"rel_{k}": (None if v is None else float(v)) for k, v in rel.items()})
+                car_acc.append(flat)
+                entry["car_quality_metrics"] = {
+                    "orig_score": o, "gen_score": g, "rel_diff": rel,
+                }
+
+            per_object[obj] = entry
+
+    def avg(dl):
+        if not dl:
+            return None
+        keys = dl[0].keys()
+        return {k: sum(d[k] for d in dl) / len(dl) for k in keys}
+
+    results = {"per_object": per_object}
+    if semantic_enabled:
+        results["overall_semantic_metrics"] = avg(sem_acc)
+    if geometric_enabled:
+        results["overall_geometric_metrics"] = avg(geom_acc)
+    if car_enabled:
+        results["overall_car_quality_metrics"] = avg(car_acc)
+    if skipped:
+        results["skipped_objects"] = skipped
+    return tensor_to_serializable(results)

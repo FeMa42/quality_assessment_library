@@ -13,7 +13,11 @@ from .utils import gpu_memory_manager
 from .progress import ProgressTracker
 
 # Import the actual processing functions
-from metrics.metrics_eval import process_metrics_by_viewpoint, tensor_to_serializable
+from metrics.metrics_eval import (
+    process_metrics_by_viewpoint,
+    process_metrics_by_object,
+    tensor_to_serializable,
+)
 from metrics.metrics import ImageBasedPromptEvaluator
 from metrics.helpers import preprocess_image, process_folder_with_metadata_file
 from metrics.viewpoint_florence import FlorenceWheelbaseOD
@@ -141,51 +145,62 @@ class PreprocessingPipeline:
 
 class EvaluationPipeline:
     """Handles all evaluation steps."""
-    
-    def __init__(self, config: Dict[str, Any], device: str, progress_tracker: ProgressTracker):
+
+    def __init__(self, config: Dict[str, Any], device: str, progress_tracker: ProgressTracker,
+                 per_object_mode: bool = False):
         self.config = config
         self.device = device
         self.progress_tracker = progress_tracker
+        self.per_object_mode = per_object_mode
         self.results = {}
-    
-    def evaluate_semantic_geometric(self, gt_folder: str, gen_folder: str, 
+
+    def evaluate_semantic_geometric(self, gt_folder: str, gen_folder: str,
                                   config_path: str, metadata_file_path: Optional[str] = None) -> bool:
         """Evaluate semantic and geometric metrics with error handling."""
         try:
             self.progress_tracker.start_stage("Semantic & Geometric Evaluation")
-            
+
             with gpu_memory_manager():
-                metrics_result = process_metrics_by_viewpoint(
-                    ground_truth_folder=gt_folder,
-                    generated_folder=gen_folder,
-                    device=self.device,
-                    config_path=config_path,
-                    metadata_file_path=metadata_file_path
-                )
-                
-                self.results['semantic_geometric'] = tensor_to_serializable(metrics_result)
-            
+                if self.per_object_mode:
+                    metrics_result = process_metrics_by_object(
+                        ground_truth_folder=gt_folder,
+                        generated_folder=gen_folder,
+                        device=self.device,
+                        config_path=config_path,
+                        metadata_file_path=metadata_file_path
+                    )
+                    self.results['semantic_geometric_per_object'] = tensor_to_serializable(metrics_result)
+                else:
+                    metrics_result = process_metrics_by_viewpoint(
+                        ground_truth_folder=gt_folder,
+                        generated_folder=gen_folder,
+                        device=self.device,
+                        config_path=config_path,
+                        metadata_file_path=metadata_file_path
+                    )
+                    self.results['semantic_geometric'] = tensor_to_serializable(metrics_result)
+
             self.progress_tracker.complete_stage("Semantic & Geometric Evaluation")
             return True
-            
+
         except Exception as e:
             logging.error(f"Semantic/geometric evaluation failed: {e}")
             return False
-    
+
     def evaluate_prompt_following(self, gen_folder: str, metadata_file_path: str) -> bool:
         """Evaluate prompt following metrics with error handling."""
         try:
             self.progress_tracker.start_stage("Prompt Following Evaluation")
-            
+
             with gpu_memory_manager():
                 prompt_metric = ImageBasedPromptEvaluator()
-                mean_scores, std_scores = process_folder_with_metadata_file(
+                mean_scores, std_scores, per_object = process_folder_with_metadata_file(
                     generated_base_folder=gen_folder,
                     metadata_file_path=metadata_file_path,
                     prompt_metric=prompt_metric,
                     preprocess_image=preprocess_image
                 )
-                
+
                 # Combine mean and std scores
                 combined_scores = {}
                 for key in mean_scores.keys():
@@ -193,74 +208,139 @@ class EvaluationPipeline:
                         "mean": mean_scores[key],
                         "std": std_scores[key]
                     }
-                
+
                 self.results['prompt_following'] = combined_scores
-            
+                if self.per_object_mode:
+                    self.results['prompt_following_per_object'] = per_object
+
             self.progress_tracker.complete_stage("Prompt Following Evaluation")
             return True
-            
+
         except Exception as e:
             logging.error(f"Prompt following evaluation failed: {e}")
             return False
-    
+
     def evaluate_vehicle_dimensions(self, gen_folder: str, metadata_file_path: str) -> bool:
         """Evaluate vehicle dimensions with error handling."""
         try:
             self.progress_tracker.start_stage("Vehicle Dimensions Evaluation")
-            
+
             florence_wheelbase_od = FlorenceWheelbaseOD()
-            average_diff, std_diff = evaluate_vehicle_dimensions(
+            average_diff, std_diff, per_object = evaluate_vehicle_dimensions(
                 gen_folder,
                 metadata_file_path,
                 florence_wheelbase_od
             )
-            
+
             self.results['vehicle_dimensions'] = {
                 "average_diff": average_diff,
                 "std_diff": std_diff
             }
-            
+            if self.per_object_mode:
+                self.results['vehicle_dimensions_per_object'] = per_object
+
             self.progress_tracker.complete_stage("Vehicle Dimensions Evaluation")
             return True
-            
+
         except Exception as e:
             logging.error(f"Vehicle dimensions evaluation failed: {e}")
             return False
-    
-    def run_all(self, gt_folder: str, gen_folder: str, metrics_config_path: str, 
+
+    def run_all(self, gt_folder: str, gen_folder: str, metrics_config_path: str,
                metadata_file: str, filter_by_metadata: bool) -> bool:
         """Run all enabled evaluation steps."""
         success = True
-        
+
         if self.config['evaluation']['semantic_geometric']['enabled']:
             metadata_file_path_vp = metadata_file if filter_by_metadata else None
             if not self.evaluate_semantic_geometric(gt_folder, gen_folder, metrics_config_path, metadata_file_path_vp):
                 success = False
-        
+
         if self.config['evaluation']['prompt_following']['enabled']:
             if not self.evaluate_prompt_following(gen_folder, metadata_file):
                 success = False
-        
+
         if self.config['evaluation']['vehicle_dimensions']['enabled']:
             if not self.evaluate_vehicle_dimensions(gen_folder, metadata_file):
                 success = False
-        
+
         return success
-    
-    def save_results(self, output_folder: str) -> None:
+
+    def save_results(self, output_folder: str, model_name: str = "unknown") -> None:
         """Save all results to files."""
         output_folder = Path(output_folder)
-        
+
         # Save individual results
         for metric_name, result in self.results.items():
             output_file = output_folder / f"{metric_name}_eval.json"
             with open(output_file, 'w') as f:
                 json.dump(result, f, indent=4)
             logging.info(f"Saved {metric_name} results to {output_file}")
-        
+
         # Save combined results
         if self.results:
             combined_file = output_folder / "meshfleet_combined_metrics.json"
             with open(combined_file, 'w') as f:
                 json.dump(self.results, f, indent=4)
             logging.info(f"Saved combined results to {combined_file}")
+
+        # Emit per-object long-format CSV when per-object data is present
+        if self.per_object_mode:
+            self._save_per_object_csv(output_folder, model_name)
+
+    def _save_per_object_csv(self, output_folder: Path, model_name: str) -> None:
+        """Write the long-format per-object CSV defined in HANDOVER §2."""
+        import pandas as pd
+
+        rows = []
+
+        sg = (self.results.get('semantic_geometric_per_object') or {}).get('per_object', {})
+        for obj, entry in sg.items():
+            n_views = entry.get("n_views")
+            for fam_key, family in (
+                ("semantic_metrics", "appearance"),
+                ("geometric_metrics", "geometric_image"),
+            ):
+                fam_metrics = entry.get(fam_key) or {}
+                for metric, value in fam_metrics.items():
+                    if metric == "Image_Pairs":
+                        continue
+                    rows.append({
+                        "object_id": obj,
+                        "model": model_name,
+                        "metric": metric,
+                        "value": value,
+                        "n_views": n_views,
+                        "family": family,
+                    })
+
+        for obj, scores in (self.results.get('prompt_following_per_object') or {}).items():
+            for metric, value in scores.items():
+                rows.append({
+                    "object_id": obj,
+                    "model": model_name,
+                    "metric": metric,
+                    "value": value,
+                    "n_views": None,
+                    "family": "prompt",
+                })
+
+        for obj, scores in (self.results.get('vehicle_dimensions_per_object') or {}).items():
+            for metric, value in scores.items():
+                rows.append({
+                    "object_id": obj,
+                    "model": model_name,
+                    "metric": metric,
+                    "value": value,
+                    "n_views": None,
+                    "family": "vehicle_dim",
+                })
+
+        if not rows:
+            logging.warning("No per-object rows to save — skipping per-object CSV")
+            return
+
+        df = pd.DataFrame(rows, columns=["object_id", "model", "metric", "value", "n_views", "family"])
+        out_path = output_folder / f"per_object_metrics_{model_name}.csv"
+        df.to_csv(out_path, index=False)
+        logging.info(f"Saved per-object CSV ({len(df)} rows) to {out_path}")
