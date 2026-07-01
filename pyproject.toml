@@ -45,6 +45,11 @@ dependencies = [
     "packaging>=24.1", 
     "sdata>=0.23",
     "image-reward>=1.5",
+    # Mesh Metrics Dependencies:
+    "rtree>=0.9.0",
+    "trimesh>=3.20",
+    "vtk>=9.2.6",
+    "MeshMetrics @ git+https://github.com/gasperpodobnik/MeshMetrics.git@main",
 ]
 
 [project.urls]
